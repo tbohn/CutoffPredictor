@@ -400,6 +400,7 @@ def left_indicator_callback(thresh, df):
 )
 def middle_indicator_callback(thresh, feature_name, df):
     df = pd.read_json(df, orient="split")
+    df = df.loc[df[p_cut_col] >= float(thresh)]
     total = ( (df[feature_name] * df[p_cut_col] / 100).sum() *
               factor_total[feature_name] )
     return feature_total_str[feature_name], '{:.1f}'.format(total)
@@ -413,9 +414,10 @@ def middle_indicator_callback(thresh, feature_name, df):
 )
 def right_indicator_callback(thresh, feature_name, df):
     df = pd.read_json(df, orient="split")
+    df = df.loc[df[p_cut_col] >= float(thresh)]
     total = ( (df[feature_name] * df[p_cut_col] / 100).sum() *
               factor_total[feature_name] )
-    n_cutoffs = len(df.loc[df[p_cut_col] >= float(thresh)])
+    n_cutoffs = len(df[p_cut_col])
     if n_cutoffs > 0:
         mean = total / n_cutoffs
         mean_str = '{:.1f}'.format(mean)
