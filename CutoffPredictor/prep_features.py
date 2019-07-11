@@ -96,8 +96,9 @@ def select_segment(df_lens, N):
 
 
 # Create table of predictors and predictands
-def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs, df_charge, df_volume,
-                         today, mode='historical', Ntest=6):
+def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
+                         df_charge, df_volume, today, mode='historical',
+                         N_sample=6):
 
     occlist = df_occupant['occupant_id'].unique()
     i = 0
@@ -229,7 +230,7 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs, df_char
         t1c_list = []
         t0v_list = []
         t1v_list = []
-        nSamples = 0
+        N_samples = 0
         if mode == 'historical':
             # For historical cutoff time series, clip time series into segments in between cutoffs (if any) and
             # select the most recent segment that can accomodate a sample window; window's end is immediately
@@ -242,43 +243,43 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs, df_char
                 dfv_list, dfv_lens = clip_time_series_by_cutoffs(dfv, 'meter_read_at',
                                                                  read_first, read_last, cutoff_dates)
                 for c in range(nCut):
-                    t0c_list.append(max(len(dfc_list[c]) - Ntest, 0))
+                    t0c_list.append(max(len(dfc_list[c]) - N_sample, 0))
                     t1c_list.append(len(dfc_list[c]))
-                    t0v_list.append(max(len(dfv_list[c]) - Ntest, 0))
+                    t0v_list.append(max(len(dfv_list[c]) - N_sample, 0))
                     t1v_list.append(len(dfv_list[c]))
-                nSamples = nCut
+                N_samples = nCut
             # For historical nocut time series, clip out sample window from random location anywhere in history
             else:
                 dfc_list.append(dfc.copy())
-                t0c = np.asscalar(np.random.uniform(0, (nCharge - Ntest), 1).astype(int))
+                t0c = np.asscalar(np.random.uniform(0, (nCharge - N_sample), 1).astype(int))
                 t0c_list.append(t0c)
-                t1c_list.append(t0c + Ntest)
+                t1c_list.append(t0c + N_sample)
                 dfv_list.append(dfv.copy())
-                t0v = np.asscalar(np.random.uniform(0, (nVolume - Ntest), 1).astype(int))
+                t0v = np.asscalar(np.random.uniform(0, (nVolume - N_sample), 1).astype(int))
                 t0v_list.append(t0v)
-                t1v_list.append(t0v + Ntest)
+                t1v_list.append(t0v + N_sample)
                 nCP_array = np.arange(0,1).astype(int)
                 CP_array = np.where(nCP_array > 0, 1, 0).astype(int)
-                nSamples = 1
+                N_samples = 1
         # For predictions from current conditions, clip out sample window from N months prior to today
         else:
             dfc_list.append(dfc.copy())
             t1c = nCharge
             t1c_list.append(t1c)
-            t0c_list.append(max(t1c - Ntest, 0))
+            t0c_list.append(max(t1c - N_sample, 0))
             dfv_list.append(dfv.copy())
             t1v = nVolume
             t1v_list.append(t1v)
-            t0v_list.append(max(t1v - Ntest, 0))
+            t0v_list.append(max(t1v - N_sample, 0))
             if cutoff:
                 nCP_array = np.arange(nCut,nCut+1).astype(int)
                 CP_array = np.where(nCP_array > 0, 1, 0).astype(int)
             else:
                 nCP_array = np.arange(0,1)
                 CP_array = np.where(nCP_array > 0, 1, 0).astype(int)
-            nSamples = 1
+            N_samples = 1
 
-        for s in range(nSamples):
+        for s in range(N_samples):
             
             t0c = t0c_list[s]
             t1c = t1c_list[s]
@@ -400,12 +401,12 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs, df_char
         
 def create_and_prep_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                                   df_charge_align_clean, df_volume_align_clean,
-                                  today, mode, Ntest):
+                                  today, mode, N_sample):
 
     # Create feature table
     feature_table = create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                                          df_charge_align_clean, df_volume_align_clean,
-                                         today, mode, Ntest)
+                                         today, mode, N_sample)
 
     collist = ['late_frac','mean_charge_tot','mean_charge_late','mean_vol','skew_vol',
                'n_anom3_vol','n_anom4_vol','n_anom5_vol','max_anom_vol',
@@ -445,32 +446,53 @@ def create_and_prep_feature_table(df_occupant, df_location, df_meter, df_cutoffs
     return feature_table
 
 
-# Prepare features
-def prep_features(config, df_meter, df_location, df_occupant,
-                  df_volume, df_charge, df_cutoffs):
+# Prepare features for model training
+def prep_features_train(config, df_meter, df_location, df_occupant,
+                        df_volume, df_charge, df_cutoffs):
 
-    modes = ['historical']
-    Ntests = [4,6,8,10,12,15,18,21,24]
-    Nrealizations = 3
+    mode = 'historical'
+    N_sample_list = config['N_sample_list']
+    N_realizations = config['N_realizations']
+
     np.random.seed(0)
-    for Ntest in Ntests:
-        for mode in modes:
-            for r in range(Nrealizations):
-                feature_table = create_and_prep_feature_table(df_occupant,
-                                                              df_location,
-                                                              df_meter,
-                                                              df_cutoffs,
-                                                              df_charge,
-                                                              df_volume,
-                                                              config['train_day'],
-                                                              mode, Ntest)
+    for N_sample in N_sample_list:
+        for r in range(N_realizations):
+            feature_table = create_and_prep_feature_table(df_occupant,
+                                                          df_location,
+                                                          df_meter,
+                                                          df_cutoffs,
+                                                          df_charge,
+                                                          df_volume,
+                                                          config['train_day'],
+                                                          mode, N_sample)
 
-                outdir = config['feature_table_hist_dir']
-                outfile = outdir + '/feature_table.{:s}.N{:02d}.{:s}.r{:d}.csv'.format(config['train_day'], Ntest, mode, r)
-                print('writing to', outfile)
-                feature_table.to_csv(outfile)
+            outdir = config['feature_table_hist_dir']
+            outfile = outdir + '/feature_table.{:s}.N{:02d}.{:s}.r{:d}.csv'.format(config['train_day'], N_sample, mode, r)
+            print('writing to', outfile)
+            feature_table.to_csv(outfile)
 
-    return [df_meter, df_location, df_occupant,
-            df_volume, df_charge, df_cutoffs]
+    return 0
+
+# Prepare features for prediction
+def prep_features_predict(config, df_meter, df_location, df_occupant,
+                          df_volume, df_charge, df_cutoffs, N_sample):
+
+    mode = 'current'
+
+    feature_table = create_and_prep_feature_table(df_occupant,
+                                                  df_location,
+                                                  df_meter,
+                                                  df_cutoffs,
+                                                  df_charge,
+                                                  df_volume,
+                                                  config['pred_day'],
+                                                  mode, N_sample)
+
+    outdir = config['feature_table_pred_dir']
+    outfile = outdir + '/feature_table.{:s}.N{:02d}.{:s}.csv'.format(config['train_day'], N_sample, mode)
+    print('writing to', outfile)
+    feature_table.to_csv(outfile)
+
+    return feature_table
 
 
