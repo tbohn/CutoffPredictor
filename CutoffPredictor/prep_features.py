@@ -97,7 +97,7 @@ def select_segment(df_lens, N):
 
 # Create table of predictors and predictands
 def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
-                         df_charge, df_volume, today, mode='historical',
+                         df_charge, df_volume, today, mode='train',
                          N_sample=6):
 
     occlist = df_occupant['occupant_id'].unique()
@@ -113,9 +113,9 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
         if len(dfo) > 0:
             move_in_date = pd.to_datetime(dfo['move_in_date'].values[0])
             move_out_date = pd.to_datetime(dfo['move_out_date'].values[0])
-            if mode == 'historical' and move_in_date > today:
+            if mode == 'train' and move_in_date > today:
                 continue
-            elif mode == 'current' and move_out_date < today:
+            elif mode == 'predict' and move_out_date < today:
                 continue
         
         # Get customer metadata
@@ -231,8 +231,8 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
         t0v_list = []
         t1v_list = []
         N_samples = 0
-        if mode == 'historical':
-            # For historical cutoff time series, clip time series into segments in between cutoffs (if any) and
+        if mode == 'train':
+            # For train cutoff time series, clip time series into segments in between cutoffs (if any) and
             # select the most recent segment that can accomodate a sample window; window's end is immediately
             # before the cutoff
             if cutoff:
@@ -248,7 +248,7 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                     t0v_list.append(max(len(dfv_list[c]) - N_sample, 0))
                     t1v_list.append(len(dfv_list[c]))
                 N_samples = nCut
-            # For historical nocut time series, clip out sample window from random location anywhere in history
+            # For train nocut time series, clip out sample window from random location anywhere in history
             else:
                 dfc_list.append(dfc.copy())
                 t0c = np.asscalar(np.random.uniform(0, (nCharge - N_sample), 1).astype(int))
@@ -416,7 +416,7 @@ def create_and_prep_feature_table(df_occupant, df_location, df_meter, df_cutoffs
               ]
 
     # Handle customers that are missing stats
-    if mode == 'historical':
+    if mode == 'train':
         # Populate stats of cutoff customers who have no stats with random samples from those with stats
         for col in collist:
             df = feature_table.loc[feature_table[col].isna(), ['occupant_id','cutoff']].copy()
@@ -447,12 +447,21 @@ def create_and_prep_feature_table(df_occupant, df_location, df_meter, df_cutoffs
 
 
 # Prepare features for model training
-def prep_features_train(config, df_meter, df_location, df_occupant,
-                        df_volume, df_charge, df_cutoffs):
+def prep_features(config, df_meter, df_location, df_occupant,
+                  df_volume, df_charge, df_cutoffs, mode):
 
-    mode = 'historical'
-    N_sample_list = config['N_sample_list']
-    N_realizations = config['N_realizations']
+    if mode == 'train':
+        N_sample_list = config['N_sample_list']
+        N_realizations = config['N_realizations']
+        ref_day = config['train_day']
+        outdir = config['feature_table_hist_dir']
+    else:
+# read N_sample from a file!!!!!!!!!
+# filename must be derivable from config dict: config['best_model_info_file']
+        N_sample_list = [N_sample]
+        N_realizations = 1
+        ref_day = config['pred_day']
+        outdir = config['feature_table_curr_dir']
 
     np.random.seed(0)
     for N_sample in N_sample_list:
@@ -463,36 +472,20 @@ def prep_features_train(config, df_meter, df_location, df_occupant,
                                                           df_cutoffs,
                                                           df_charge,
                                                           df_volume,
-                                                          config['train_day'],
+                                                          ref_day,
                                                           mode, N_sample)
 
-            outdir = config['feature_table_hist_dir']
-            outfile = outdir + '/feature_table.{:s}.N{:02d}.{:s}.r{:d}.csv'.format(config['train_day'], N_sample, mode, r)
+            if mode == 'train':
+                rstr = '.r{:d}'.format(r)
+            else:
+                rstr = ''
+            outfile = outdir + '/feature_table.{:s}.N{:02d}.{:s}{:s}.csv'.format(config['train_day'], N_sample, mode, rstr)
             print('writing to', outfile)
             feature_table.to_csv(outfile)
 
-    return 0
-
-# Prepare features for prediction
-def prep_features_predict(config, df_meter, df_location, df_occupant,
-                          df_volume, df_charge, df_cutoffs, N_sample):
-
-    mode = 'current'
-
-    feature_table = create_and_prep_feature_table(df_occupant,
-                                                  df_location,
-                                                  df_meter,
-                                                  df_cutoffs,
-                                                  df_charge,
-                                                  df_volume,
-                                                  config['pred_day'],
-                                                  mode, N_sample)
-
-    outdir = config['feature_table_pred_dir']
-    outfile = outdir + '/feature_table.{:s}.N{:02d}.{:s}.csv'.format(config['train_day'], N_sample, mode)
-    print('writing to', outfile)
-    feature_table.to_csv(outfile)
-
-    return feature_table
+    if mode == 'train':
+        return 0
+    else:
+        return feature_table
 
 
