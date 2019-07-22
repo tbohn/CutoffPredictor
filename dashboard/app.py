@@ -1,4 +1,8 @@
+#!/usr/bin/env/python
 # -*- coding: utf-8 -*-
+import argparse
+import os.path
+from CutoffPredictor import config
 import dash
 from dash.dependencies import Input, Output, State
 import dash_core_components as dcc
@@ -10,85 +14,26 @@ import pandas as pd
 import numpy as np
 import math
 
+# -------------------------------------------------------------------- #
 #
-# Set up the app
+# Define functions called by dashboard objects
 #
-server = flask.Flask(__name__)
-app = dash.Dash(__name__, server=server)
-app.config.suppress_callback_exceptions = True
-
-#external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-#app.css.append_css({'external_url': external_stylesheets})
-
-
-#
-# Preliminary global definitions
-#
-mapbox_access_token = 'pk.eyJ1IjoidGVkb3JpbyIsImEiOiJjanhodzA0OGkwaG11M3ltdHU0NTVhNzF1In0.h0M1mm_38Tz1iYUK6k_klQ'
-p_cut_col = 'p_cutoff'
-lat_center = 33.55
-lon_center = -84.36
-feature_longname = {
-    'p_cutoff': 'Cutoff Probability (%)',
-    'mean_charge_tot': 'Mean Monthly Charges ($/mo)',
-    'mean_charge_late': 'Mean Late Charges ($/mo)',
-    'mean_vol': 'Mean Volume Usage (kGal/mo)',
-    'late_frac': 'Late Payment Pct (%)',
-    'nCutPrior': 'Number of Prior Cutoffs',
-    'meter_address': 'Address',
-    'move_in_date': 'Move-In Date',
-    'cust_type': 'Customer Type',
-    'municipality': 'Municipality',
-    'meter_size': 'Meter Size',
-}
-feature_total_str = {
-    'p_cutoff': 'Predicted Cutoffs',
-    'mean_charge_tot': 'Total Revenue Loss ($K/mo)',
-    'mean_charge_late': 'Totale Late Charges ($K/mo)',
-    'mean_vol': 'Total Volume Loss (kGal/mo)',
-    'late_frac': 'Total Late Payment Pct (%)',
-    'nCutPrior': 'Total No. Prior Cutoffs',
-}
-feature_mean_str = {
-    'p_cutoff': 'Predicted Cutoffs',
-    'mean_charge_tot': 'Mean Revenue Loss ($K/mo)',
-    'mean_charge_late': 'Mean Late Charges ($K/mo)',
-    'mean_vol': 'Mean Volume Loss (kGal/mo)',
-    'late_frac': 'Mean Late Payment Pct (%)',
-    'nCutPrior': 'Mean No. Prior Cutoffs',
-}
-factor_total = {
-    'p_cutoff': 1,
-    'mean_charge_tot': 0.001,
-    'mean_charge_late': 0.001,
-    'mean_vol': 1,
-    'late_frac': 1,
-    'nCutPrior': 1,
-}
-
-
-#
-# Define functions
-#
+# -------------------------------------------------------------------- #
 
 # Fetch the dataset
-def read_df():
-    today_str = '2019-01-01'
-    datadir = 'file:/home/theodore/Insight/data'
+def read_df(config):
 
-    # Select which model to use (do we use prior cutoffs as a feature?)
-    include_cut_prior=False
-    if include_cut_prior:
-        cut_prior_str = 'with_cut_prior'
-    else:
-        cut_prior_str = 'omit_cut_prior'
+    today_str = config['PREDICTION']['REF_DAY']
+    combo_type = config['PREDICTION']['FEATURE_COMBO_TYPE']
 
     # Read the feature file
-    feature_file = datadir + '/feature_tables.current/feature_table.' + today_str + '.' + cut_prior_str + '.best.csv'
+    feature_dir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
+    feature_file = feature_dir + '/feature_table.' + today_str + '.' + combo_type + '.best.csv'
     df = pd.read_csv(feature_file)
 
     # Merge the probabilities into the feature table
-    prob_file = datadir + '/predictions.current/probabilities.' + today_str + '.' + cut_prior_str + '.best.csv'
+    prediction_dir = config['PATHS']['PREDICTION_DIR_PRED']
+    prob_file = prediction_dir + '/probabilities.' + today_str + '.' + combo_type + '.best.csv'
     probabilities = pd.read_csv(prob_file)
     df['p_cutoff'] = probabilities['p_cutoff']
 
@@ -202,175 +147,262 @@ def generate_table(df, max_rows=1000):
     )
 
 
+# -------------------------------------------------------------------- #
 #
-# Define the page layout
+# Run the dashboard
 #
-app.layout = html.Div(
-    [
-        # header
-        html.Div(
-            [
-                html.Span("CutoffPredictor", className='app-title'),
-                html.Div(
-                    children=[
-                        html.Img(src='file:///home/theodore/Insight/tools/CutoffPredictor.dash/images/InsightLogo.png',height="100%"),
-                        html.Img(src='file:///home/theodore/Insight/tools/CutoffPredictor.dash/images/ValorWaterLogo.png',height="100%"),
-                        html.Img(src='https://s3-us-west-1.amazonaws.com/plotly-tutorials/logo/new-branding/dash-logo-by-plotly-stripe-inverted.png',height="100%"),
-                    ],
-                    style={"float":"right","height":"100%"},
-                ),
-            ],
-            className="row header",
-        ),
+# -------------------------------------------------------------------- #
+def dashboard(config_file):
 
-        # div to save dataframe
-        html.Div(read_df().to_json(orient="split"),
-                 id="current_df",
-                 style={"display": "none"}),
+    # -------------------------------------------------------------------- #
+    #
+    # Set up the app
+    #
+    # -------------------------------------------------------------------- #
+    server = flask.Flask(__name__)
+    app = dash.Dash(__name__, server=server)
+    app.config.suppress_callback_exceptions = True
 
-        # User selections
-        html.Div(
-            [
-                html.Div(html.P(
-                             'Thresh. {}:'.format(feature_longname[p_cut_col]),
-                             style={"textAlign": "right"},
-                             ),
-                         className="two columns"),
-                html.Div(
-                    dcc.Input(
-                        id="thresh_input",
-                        value=50,
-                        type='number',
-                    ),
-                    className="two columns",
-                ),
-                html.Div(
-                    dcc.Dropdown(
-                        id="history_dropdown",
-                        options=[
-                            {"label": "Mean Monthly Charges ($)", "value": "mean_charge_tot"},
-                            {"label": "Mean Late Charges ($)", "value": "mean_charge_late"},
-                            {"label": "Mean Volume Used (kGal)", "value": "mean_vol"},
-                            {"label": "Prior Cutoffs", "value": "nCutPrior"},
+#    external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+#    app.css.append_css({'external_url': external_stylesheets})
+
+    # -------------------------------------------------------------------- #
+    #
+    # Global definitions
+    #
+    # -------------------------------------------------------------------- #
+    # Read config_file
+    if isinstance(config_file, dict):
+        config = config_file
+    else:
+        config = read_config(config_file)
+    # Use config file to set up definitions
+    mapbox_access_token = config['MAPPING']['MAPBOX_ACCESS_TOKEN']
+    lat_center = config['MAPPING']['MAP_CENTER_LAT']
+    lon_center = config['MAPPING']['MAP_CENTER_LON']
+    p_cut_col = 'p_cutoff'
+    feature_longname = {
+        'p_cutoff': 'Cutoff Probability (%)',
+        'mean_charge_tot': 'Mean Monthly Charges ($/mo)',
+        'mean_charge_late': 'Mean Late Charges ($/mo)',
+        'mean_vol': 'Mean Volume Usage (kGal/mo)',
+        'late_frac': 'Late Payment Pct (%)',
+        'nCutPrior': 'Number of Prior Cutoffs',
+        'meter_address': 'Address',
+        'move_in_date': 'Move-In Date',
+        'cust_type': 'Customer Type',
+        'municipality': 'Municipality',
+        'meter_size': 'Meter Size',
+    }
+    feature_total_str = {
+        'p_cutoff': 'Predicted Cutoffs',
+        'mean_charge_tot': 'Total Revenue Loss ($K/mo)',
+        'mean_charge_late': 'Totale Late Charges ($K/mo)',
+        'mean_vol': 'Total Volume Loss (kGal/mo)',
+        'late_frac': 'Total Late Payment Pct (%)',
+        'nCutPrior': 'Total No. Prior Cutoffs',
+    }
+    feature_mean_str = {
+        'p_cutoff': 'Predicted Cutoffs',
+        'mean_charge_tot': 'Mean Revenue Loss ($K/mo)',
+        'mean_charge_late': 'Mean Late Charges ($K/mo)',
+        'mean_vol': 'Mean Volume Loss (kGal/mo)',
+        'late_frac': 'Mean Late Payment Pct (%)',
+        'nCutPrior': 'Mean No. Prior Cutoffs',
+    }
+    factor_total = {
+        'p_cutoff': 1,
+        'mean_charge_tot': 0.001,
+        'mean_charge_late': 0.001,
+        'mean_vol': 1,
+        'late_frac': 1,
+        'nCutPrior': 1,
+    }
+
+    # -------------------------------------------------------------------- #
+    #
+    # Define the page layout
+    #
+    # -------------------------------------------------------------------- #
+    app.layout = html.Div(
+        [
+            # header
+            html.Div(
+                [
+                    html.Span("CutoffPredictor", className='app-title'),
+                    html.Div(
+                        children=[
+                            html.Img(src='file://' + config['PATHS']['IMAGES_DIR'] + '/InsightLogo.png',height="100%"),
+                            html.Img(src='file://' + config['PATHS']['IMAGES_DIR'] + '/ValorWaterLogo.png',height="100%"),
+                            html.Img(src='https://s3-us-west-1.amazonaws.com/plotly-tutorials/logo/new-branding/dash-logo-by-plotly-stripe-inverted.png',height="100%"),
                         ],
-                        value="mean_charge_tot",
-                        clearable=False,
+                        style={"float":"right","height":"100%"},
                     ),
-                    className="four columns",
-                ),
-                html.Div(
-                    dcc.Dropdown(
-                        id="metadata_dropdown",
-                        options=[
-                            {"label": "Customer Type", "value": "cust_type"},
-                            {"label": "Municipality", "value": "municipality"},
-                            {"label": "Meter Size", "value": "meter_size"},
+                ],
+                className="row header",
+            ),
+
+            # div to save dataframe
+            html.Div(read_df(config).to_json(orient="split"),
+                     id="current_df",
+                     style={"display": "none"}),
+
+            # User selections
+            html.Div(
+                [
+                    html.Div(html.P(
+                                 'Thresh. {}:'.format(feature_longname[p_cut_col]),
+                                 style={"textAlign": "right"},
+                                 ),
+                             className="two columns"),
+                    html.Div(
+                        dcc.Input(
+                            id="thresh_input",
+                            value=50,
+                            type='number',
+                        ),
+                        className="two columns",
+                    ),
+                    html.Div(
+                        dcc.Dropdown(
+                            id="history_dropdown",
+                            options=[
+                                {"label": "Mean Monthly Charges ($)", "value": "mean_charge_tot"},
+                                {"label": "Mean Late Charges ($)", "value": "mean_charge_late"},
+                                {"label": "Mean Volume Used (kGal)", "value": "mean_vol"},
+                                {"label": "Prior Cutoffs", "value": "nCutPrior"},
+                            ],
+                            value="mean_charge_tot",
+                            clearable=False,
+                        ),
+                        className="four columns",
+                    ),
+                    html.Div(
+                        dcc.Dropdown(
+                            id="metadata_dropdown",
+                            options=[
+                                {"label": "Customer Type", "value": "cust_type"},
+                                {"label": "Municipality", "value": "municipality"},
+                                {"label": "Meter Size", "value": "meter_size"},
+                            ],
+                            value="cust_type",
+                            clearable=False,
+                        ),
+                        className="four columns",
+                    ),
+                ],
+                className="row",
+                style={"marginBottom": "10"},
+            ),
+
+            # indicators row div
+            html.Div(
+                [
+                    indicator(
+                         "left_indicator_title", "left_indicator"
+                    ),
+                    indicator(
+                         "middle_indicator_title", "middle_indicator"
+                    ),
+                    indicator(
+                         "right_indicator_title", "right_indicator"
+                    ),
+                ],
+                className="row",
+            ),
+
+            # charts row div
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Div(id="map_cutoff_title",
+                                     children=feature_longname[p_cut_col],
+                                     style={"textAlign": "center"}),
+                            dcc.Graph(
+                                id="map_cutoff",
+                                style={"height": "90%", "width": "98%"},
+                                config=dict(displayModeBar=False),
+                            ),
                         ],
-                        value="cust_type",
-                        clearable=False,
+                        className="four columns chart_div"
                     ),
-                    className="four columns",
-                ),
-            ],
-            className="row",
-            style={"marginBottom": "10"},
-        ),
 
-        # indicators row div
-        html.Div(
-            [
-                indicator(
-                     "left_indicator_title", "left_indicator"
-                ),
-                indicator(
-                     "middle_indicator_title", "middle_indicator"
-                ),
-                indicator(
-                     "right_indicator_title", "right_indicator"
-                ),
-            ],
-            className="row",
-        ),
+                    html.Div(
+                        [
+                            html.Div(id="map_history_title",
+                                     children="Customer History",
+                                     style={"textAlign": "center"}),
+                            dcc.Graph(
+                                id="map_history",
+                                style={"height": "90%", "width": "98%"},
+                                config=dict(displayModeBar=False),
+                            ),
+                        ],
+                        className="four columns chart_div"
+                    ),
 
-        # charts row div
-        html.Div(
-            [
-                html.Div(
-                    [
-                        html.Div(id="map_cutoff_title",
-                                 children=feature_longname[p_cut_col],
-                                 style={"textAlign": "center"}),
-                        dcc.Graph(
-                            id="map_cutoff",
-                            style={"height": "90%", "width": "98%"},
-                            config=dict(displayModeBar=False),
-                        ),
-                    ],
-                    className="four columns chart_div"
-                ),
+                    html.Div(
+                        [
+                            html.Div(id="chart_metadata_title",
+                                     children="Customer Metadata",
+                                     style={"textAlign": "center"}),
+                            dcc.Graph(
+                                id="chart_metadata",
+                                style={"height": "90%", "width": "98%"},
+                                config=dict(displayModeBar=False),
+                            ),
+                        ],
+                        className="four columns chart_div"
+                    ),
+                ],
+                className="row",
+                style={"marginTop": "5"},
+            ),
 
-                html.Div(
-                    [
-                        html.Div(id="map_history_title",
-                                 children="Customer History",
-                                 style={"textAlign": "center"}),
-                        dcc.Graph(
-                            id="map_history",
-                            style={"height": "90%", "width": "98%"},
-                            config=dict(displayModeBar=False),
-                        ),
-                    ],
-                    className="four columns chart_div"
-                ),
+            # table div
+            html.Div(
+                id="cust_table",
+                className="row",
+                style={
+                    "maxHeight": "350px",
+                    "overflowY": "scroll",
+                    "padding": "8",
+                    "marginTop": "5",
+                    "backgroundColor":"white",
+                    "border": "1px solid #C8D4E3",
+                    "borderRadius": "3px"
+                },
+            ),
 
-                html.Div(
-                    [
-                        html.Div(id="chart_metadata_title",
-                                 children="Customer Metadata",
-                                 style={"textAlign": "center"}),
-                        dcc.Graph(
-                            id="chart_metadata",
-                            style={"height": "90%", "width": "98%"},
-                            config=dict(displayModeBar=False),
-                        ),
-                    ],
-                    className="four columns chart_div"
-                ),
-            ],
-            className="row",
-            style={"marginTop": "5"},
-        ),
+            html.Link(href="https://use.fontawesome.com/releases/v5.2.0/css/all.css",rel="stylesheet"),
+            html.Link(href="https://cdn.rawgit.com/plotly/dash-app-stylesheets/2d266c578d2a6e8850ebce48fdb52759b2aef506/stylesheet-oil-and-gas.css",rel="stylesheet"),
+            html.Link(href="https://fonts.googleapis.com/css?family=Dosis", rel="stylesheet"),
+            html.Link(href="https://fonts.googleapis.com/css?family=Open+Sans", rel="stylesheet"),
+            html.Link(href="https://fonts.googleapis.com/css?family=Ubuntu", rel="stylesheet"),
+            html.Link(href="https://cdn.rawgit.com/amadoukane96/8a8cfdac5d2cecad866952c52a70a50e/raw/cd5a9bf0b30856f4fc7e3812162c74bfc0ebe011/dash_crm.css", rel="stylesheet"),
+        ],
+        className="row",
+        style={"margin": "0%"},
+    )
 
-        # table div
-        html.Div(
-            id="cust_table",
-            className="row",
-            style={
-                "maxHeight": "350px",
-                "overflowY": "scroll",
-                "padding": "8",
-                "marginTop": "5",
-                "backgroundColor":"white",
-                "border": "1px solid #C8D4E3",
-                "borderRadius": "3px"
-            },
-        ),
+    # -------------------------------------------------------------------- #
+    #
+    # Start the dashboard
+    #
+    # -------------------------------------------------------------------- #
+    # setting debug=True enables instant refreshing of the page
+    # when changes are made to the files
+    app.run_server(debug=True)
 
-        html.Link(href="https://use.fontawesome.com/releases/v5.2.0/css/all.css",rel="stylesheet"),
-        html.Link(href="https://cdn.rawgit.com/plotly/dash-app-stylesheets/2d266c578d2a6e8850ebce48fdb52759b2aef506/stylesheet-oil-and-gas.css",rel="stylesheet"),
-        html.Link(href="https://fonts.googleapis.com/css?family=Dosis", rel="stylesheet"),
-        html.Link(href="https://fonts.googleapis.com/css?family=Open+Sans", rel="stylesheet"),
-        html.Link(href="https://fonts.googleapis.com/css?family=Ubuntu", rel="stylesheet"),
-        html.Link(href="https://cdn.rawgit.com/amadoukane96/8a8cfdac5d2cecad866952c52a70a50e/raw/cd5a9bf0b30856f4fc7e3812162c74bfc0ebe011/dash_crm.css", rel="stylesheet"),
-    ],
-    className="row",
-    style={"margin": "0%"},
-)
+    return 0
 
 
+# -------------------------------------------------------------------- #
 #
 # Define the callbacks
 #
+# -------------------------------------------------------------------- #
 
 ## updates title of thresh slider based on value
 #@app.callback(
@@ -506,10 +538,3 @@ def cust_table_callback(thresh, df):
 #    return current_df
 
 
-#
-# Allow this file to be run as the main program
-#
-if __name__ == '__main__':
-    # setting debug=True enables instant refreshing of the page
-    # when changes are made to the files
-    app.run_server(debug=True)
