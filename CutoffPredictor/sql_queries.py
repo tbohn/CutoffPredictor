@@ -7,9 +7,11 @@ from CutoffPredictor import table_columns
 def create_conn(*args,**kwargs):
     config = kwargs['config']
     try:
-        con=psycopg2.connect(dbname=config['dbname'], host=config['host'], 
-                             port=config['port'], user=config['user'], 
-                             password=config['pwd'])
+        con=psycopg2.connect(dbname=config['DATABASE']['DBNAME'],
+                             host=config['DATABASE']['HOST'], 
+                             port=config['DATABASE']['PORT'],
+                             user=config['DATABASE']['USER'], 
+                             password=config['DATABASE']['PWD'])
         return con
     except Exception as err:
         print(err)
@@ -17,8 +19,8 @@ def create_conn(*args,**kwargs):
 def fetch_data(config):
 
     conn = create_conn(config=config)
-    schema = config['schema']
-    data_set_id = config['data_set_id']
+    schema = config['DATABASE']['SCHEMA']
+    data_set_id = config['DATABASE']['DATA_SET_ID']
 
     # Construct meter dataframe, keyed by meter_id
     tables_full = [schema + '.meter']
