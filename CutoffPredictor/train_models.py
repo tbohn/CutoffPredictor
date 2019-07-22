@@ -8,6 +8,9 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import roc_curve, auc
+import pickle
+#from itertools import combinations
+from shutil import copyfile
 
 def prep_train_test_data(feature_table, feature_list, label, oversample=True):
     
@@ -152,237 +155,271 @@ def apply_fitted_model(model, feature_table, feature_list, score=False, labels=N
             false_positive_rate, true_positive_rate, thresholds, auc_roc]
 
 
-# Train/Test various models
-import pickle
-from itertools import combinations
-from shutil import copyfile
+# Find best-performing model, based on the average performance score across all realizations
+def train_and_compare_models(config):
 
-today_str = '2019-01-01'
-today = pd.Timestamp(today_str)
-model_types = ['random_forest','logistic_regression']
-N_samples = [4,6,8,10,12,15,18,21,24]
-combo_types = ['with_cut_prior','omit_cut_prior']
-features = {
-    'with_cut_prior': [
-        'late_frac','zero_frac_vol','cut_prior','nCutPrior',
-        'cust_type_code','municipality','meter_size','skew_vol',
-        'n_anom3_vol','max_anom_vol','n_anom3_local_vol','max_anom_local_vol',
-        'n_anom3_vol_log','max_anom_vol_log','n_anom3_local_vol_log','max_anom_local_vol_log',
-    ],
-    'omit_cut_prior': [
-        'late_frac','zero_frac_vol',
-        'cust_type_code','municipality','meter_size','skew_vol',
-        'n_anom3_vol','max_anom_vol','n_anom3_local_vol','max_anom_local_vol',
-        'n_anom3_vol_log','max_anom_vol_log','n_anom3_local_vol_log','max_anom_local_vol_log',
-    ],
-}
-categoricals = ['cust_type_code','municipality']
-nN_samples = len(N_samples)
-nRealizations = 3
-feature_dir = '../data/feature_tables.train'
-model_save_dir = '../data/saved_models'
-model_perf_dir = '../data/model_perf'
-prediction_dir = '../data/predictions.train'
-features_train = {}
-labels_train = {}
-features_test = {}
-labels_test = {}
-nCTypes = len(combo_types)
-nMTypes = len(model_types)
-auroc_array = np.zeros([nCTypes,nMTypes,nN_samples,nRealizations])
-mode = 'train'
-first = 1
-n = 0
-for N_sample in N_samples:
-    features_train[N_sample] = {}
-    labels_train[N_sample] = {}
-    features_test[N_sample] = {}
-    labels_test[N_sample] = {}
-    r = 0
-    for r in range(nRealizations):
+    # Train/Test various models
+
+    ref_day = config['TRAINING']['REF_DAY']
+    model_type_list_str = config['TRAINING']['MODEL_TYPES']
+    model_types = model_type_list_str.split(',')
+    combo_type_list_str = config['TRAINING']['COMBO_TYPES']
+    combo_types = combo_type_list_str.split(',')
+    feature_list = {
+        'with_cut_prior': [
+            'late_frac','zero_frac_vol','cut_prior','nCutPrior',
+            'cust_type_code','municipality','meter_size','skew_vol',
+            'n_anom3_vol','max_anom_vol',
+            'n_anom3_local_vol','max_anom_local_vol',
+            'n_anom3_vol_log','max_anom_vol_log',
+            'n_anom3_local_vol_log','max_anom_local_vol_log',
+        ],
+        'omit_cut_prior': [
+            'late_frac','zero_frac_vol',
+            'cust_type_code','municipality','meter_size','skew_vol',
+            'n_anom3_vol','max_anom_vol',
+            'n_anom3_local_vol','max_anom_local_vol',
+            'n_anom3_vol_log','max_anom_vol_log',
+            'n_anom3_local_vol_log','max_anom_local_vol_log',
+        ],
+    }
+    categoricals = ['cust_type_code','municipality']
+    N_sample_list_str = config['TRAINING']['N_SAMPLE_LIST']
+    N_sample_list = N_sample_list_str.split(',')
+    nN_samples = len(N_sample_list)
+    nRealizations = config['TRAINING']['N_REALIZATIONS']
+    feature_dir = config['PATHS']['FEATURE_TABLE_DIR_TRAIN']
+    model_save_dir = config['PATHS']['MODEL_SAVE_DIR']
+    model_perf_dir = config['PATHS']['MODEL_PERF_DIR']
+    features_train = {}
+    labels_train = {}
+    features_test = {}
+    labels_test = {}
+    nCTypes = len(combo_types)
+    nMTypes = len(model_types)
+    auroc_array = np.zeros([nCTypes,nMTypes,nN_samples,nRealizations])
+    mode = 'train'
+    first = 1
+    n = 0
+    for N_sample in N_samples:
+        features_train[N_sample] = {}
+        labels_train[N_sample] = {}
+        features_test[N_sample] = {}
+        labels_test[N_sample] = {}
+        r = 0
+        for r in range(nRealizations):
         
-        # Read feature table
-        infile = feature_dir + '/feature_table.{:s}.N{:02d}.{:s}.r{:d}.csv'.format(today_str, N_sample, mode, r)
-        print('reading', infile)
-        feature_table = pd.read_csv(infile)
+            # Read feature table
+            infile = feature_dir + '/feature_table.{:s}.N{:02d}.{:s}.r{:d}.csv'.format(ref_day, N_sample, mode, r)
+            print('reading', infile)
+            feature_table = pd.read_csv(infile)
 
-        # Prepare train and test datasets
-        oversample = True
-        oversample_str = '.os'
-        [features_train[N_sample][r],
-         labels_train[N_sample][r],
-         features_test[N_sample][r],
-         labels_test[N_sample][r]] = prep_train_test_data(feature_table, features[combo_types[0]], 'cutoff', oversample)
-        features_train[N_sample][r]['cutoff'] = labels_train[N_sample][r]['cutoff']
-        features_test[N_sample][r]['cutoff'] = labels_test[N_sample][r]['cutoff']
+            # Prepare train and test datasets
+            oversample = True
+            oversample_str = '.os'
+            feature_list_all = feature_list=['with_cut_prior']
+            [features_train[N_sample][r],
+             labels_train[N_sample][r],
+             features_test[N_sample][r],
+             labels_test[N_sample][r]] = prep_train_test_data(feature_table,
+                                                              feature_list_all,
+                                                              'cutoff',
+                                                              oversample)
+            features_train[N_sample][r]['cutoff'] = labels_train[N_sample][r]['cutoff']
+            features_test[N_sample][r]['cutoff'] = labels_test[N_sample][r]['cutoff']
 
-        for c in range(nCTypes):
+            for c in range(nCTypes):
             
-            m = 0
-            for model_type in model_types:
-                features_to_use = features[combo_types[c]].copy()
-                if model_type == 'logistic_regression':
-                    for feat in categoricals:
-                        features_to_use.remove(feat)
+                m = 0
+                for model_type in model_types:
+                    features_to_use = feature_list[combo_types[c]].copy()
+                    if model_type == 'logistic_regression':
+                        for feat in categoricals:
+                            features_to_use.remove(feat)
 
-                # Train and test model
-                [model, predictions, probabilities,
-                 auc_roc, conf_mat, false_positive_rate,
-                 true_positive_rate, thresholds] = train_and_test_model(model_type, features_train[N_sample][r],
-                                                                        features_to_use, 'cutoff')
-                print(N_sample,r,combo_types[c],model_type,auc_roc)
+                    # Train and test model
+                    [model,
+                     predictions,
+                     probabilities,
+                     auc_roc,
+                     conf_mat,
+                     false_positive_rate,
+                     true_positive_rate, 
+                     thresholds] = train_and_test_model(model_type,
+                                                        features_train[N_sample][r],
+                                                        features_to_use,
+                                                        'cutoff')
+                    print(N_sample,r,combo_types[c],model_type,auc_roc)
             
 
-                # Write performance metrics to a file
-                perf_file = model_perf_dir + '/stats.cross_val.{:s}.{:s}.N{:02d}.{:s}.f{:s}.r{:d}{:s}.txt'.format(model_type, today_str,
-                                                                                                                  N_sample, mode, combo_types[c],
-                                                                                                                  r, oversample_str)
-                if first:
-                    code = 'w'
-                else:
-                    code = 'a'
-                f = open(perf_file, code)
-
-                if first:
-                    tmpstr = 'model_type,combo_type,N_sample,r,AUROC\n'
-                    f.write(tmpstr)
-                tmpstr = '{:s},{:s},{:02d},{:d},{:.6f}\n'.format(model_type,combo_types[c],N_samples[n],r,auc_roc)
-                f.write(tmpstr)
-                f.close()
-
-                if model_type == 'random_forest':
-                    # Write feature importances to a file
-                    importances = model.feature_importances_
-                    imp_file = model_perf_dir + '/importances.{:s}.{:s}.N{:02d}.{:s}.f{:s}.r{:d}{:s}.txt'.format(model_type, today_str,
-                                                                                                                 N_sample, mode, combo_types[c],
-                                                                                                                 r, oversample_str)
+                    # Write performance metrics to a file
+                    perf_file = model_perf_dir + '/stats.cross_val.{:s}.{:s}.N{:02d}.{:s}.f{:s}.r{:d}{:s}.txt'.format(model_type, ref_day, N_sample, mode, combo_types[c], r, oversample_str)
+                    if first:
+                        code = 'w'
+                    else:
+                        code = 'a'
                     f = open(perf_file, code)
-                    tmpstr = ','.join(str(importances)) + '\n'
+
+                    if first:
+                        tmpstr = 'model_type,combo_type,N_sample,r,AUROC\n'
+                        f.write(tmpstr)
+                    tmpstr = '{:s},{:s},{:02d},{:d},{:.6f}\n'.format(model_type,combo_types[c],N_samples[n],r,auc_roc)
                     f.write(tmpstr)
                     f.close()
+
+                    if model_type == 'random_forest':
+                        # Write feature importances to a file
+                        importances = model.feature_importances_
+                        imp_file = model_perf_dir + '/importances.{:s}.{:s}.N{:02d}.{:s}.f{:s}.r{:d}{:s}.txt'.format(model_type, ref_day, N_sample, mode, combo_types[c], r, oversample_str)
+                        f = open(perf_file, code)
+                        tmpstr = ','.join(str(importances)) + '\n'
+                        f.write(tmpstr)
+                        f.close()
                 
-                # Store AUC ROC
-                auroc_array[c,m,n,r] = auc_roc
+                    # Store AUC ROC
+                    auroc_array[c,m,n,r] = auc_roc
             
-                first = 0
+                    first = 0
 
-                m += 1
-        r += 1
-    n += 1
+                    m += 1
+            r += 1
+        n += 1
 
         
+    # Two sets of scores - one with prior cutoffs included as features, one without
+    max_auroc_ar = np.empty(2)
+    mmax_ar = np.empty(2, dtype=np.int)
+    nmax_ar = np.empty(2, dtype=np.int)
+    rmax_ar = np.empty(2, dtype=np.int)
 
-# Find best-performing model, based on the average performance score across all realizations
-# Average auroc scores across realizations
-max_auroc_ar = np.empty(2)
-mmax_ar = np.empty(2, dtype=np.int)
-nmax_ar = np.empty(2, dtype=np.int)
-rmax_ar = np.empty(2, dtype=np.int)
-auroc_mean = np.mean(auroc_array, axis=3)
-print(auroc_mean)
-max_auroc_ar[0] = np.max(auroc_mean[0])
-idx = auroc_mean[0].flatten().argmax()
-mmax_ar[0] = int(idx / nN_samples) 
-nmax_ar[0] = idx - mmax_ar[0] * nN_samples
-print('with_cutoffs',model_types[mmax_ar[0]],N_samples[nmax_ar[0]])
-max_auroc_ar[1] = np.max(auroc_mean[1])
-idx = auroc_mean[1].flatten().argmax()
-mmax_ar[1] = int(idx / nN_samples) 
-nmax_ar[1] = idx - mmax_ar[1] * nN_samples
-print('without_cutoffs',model_types[mmax_ar[1]],N_samples[nmax_ar[1]])
-# Print out metrics of all models just for reference
-for c in range(nCTypes):
-    for m in range(nMTypes):
-        for n in range(nN_samples):
-            print(combo_types[c],model_types[m],N_samples[n],auroc_mean[c,m,n])
-# Show the best models
-print('best of models with cutoff features:','alg:',model_types[mmax_ar[0]],'N:',N_samples[nmax_ar[0]],
-      'ROC AUC over train:',max_auroc_ar[0])
-print('best of models without cutoff features:','alg:',model_types[mmax_ar[1]],'N:',N_samples[nmax_ar[1]],
-      'ROC AUC over train:',max_auroc_ar[1])
+    # Average auroc scores across realizations
+    auroc_mean = np.mean(auroc_array, axis=3)
 
-# For the model with best perf averaged over 3 realizations, find the realization for which perf was best
-for c in range(nCTypes):
-    rmax_ar[c] = np.argmax(auroc_array[c,mmax_ar[c],nmax_ar[c],:])
+    # Find maximum average scores
+    for c in range(nCTypes):
+        max_auroc_ar[c] = np.max(auroc_mean[c])
+        idx = auroc_mean[c].flatten().argmax()
+        mmax_ar[c] = int(idx / nN_samples) 
+        nmax_ar[c] = idx - mmax_ar[c] * nN_samples
+        print(combo_types[c],model_types[mmax_ar[c]],N_samples[nmax_ar[c]])
+
+#    # Print out metrics of all models just for reference
+#    for c in range(nCTypes):
+#        for m in range(nMTypes):
+#            for n in range(nN_samples):
+#                print(combo_types[c],model_types[m],N_samples[n],
+#                      auroc_mean[c,m,n])
+
+    # Show the best models
+    for c in range(nCTypes):
+        print(combo_types[c], 'best model:', 'alg:',
+              model_types[mmax_ar[c]], 'N:', N_samples[nmax_ar[c]],
+              'ROC AUC over train:', max_auroc_ar[c])
+
+    # For the model with best perf averaged over 3 realizations, find the realization for which perf was best
+    for c in range(nCTypes):
+        rmax_ar[c] = np.argmax(auroc_array[c,mmax_ar[c],nmax_ar[c],:])
 
 
-feature_dir = '../data/feature_tables.current'
-prediction_dir = '../data/predictions.current'
-conf_mat_list = []
-fpr_list = []
-tpr_list = []
-thresh_list = []
-auroc_list = []
-for c in range(nCTypes):
+    best_model_data = {}
+    for col in ['ref_day', 'feature_combo_type', 'model_type', 'N_sample',
+                'realization', 'oversample']:
+        best_model_data[col] = np.empty([nCTypes])
 
-    # Re-fit model to training set and save the model
-    mode = 'train'
-    model_type = model_types[mmax_ar[c]]
-    N_sample = N_samples[nmax_ar[c]]
-    r = rmax_ar[c]
-    features_to_use = features[combo_types[c]].copy()
-#    print(features_to_use)
-    if model_type == 'logistic_regression':
-        for feat in categoricals:
-            features_to_use.remove(feat)
-    [model, predictions, probabilities,
-     auc_roc, conf_mat, false_positive_rate,
-     true_positive_rate, thresholds] = train_and_test_model(model_type, features_train[N_sample][r],
-                                                            features_to_use, 'cutoff')
-    print(N_sample,r,model_type,combo_types[c],auc_roc)
-    model_file = model_save_dir + '/model.{:s}.{:s}.N{:02d}.{:s}.{:s}.r{:d}{:s}.sav'.format(model_type, today_str,
-                                                                                            N_sample, mode, combo_types[c],
-                                                                                            r, oversample_str)
-    pickle.dump(model, open(model_file, 'wb'))
+    conf_mat_list = []
+    fpr_list = []
+    tpr_list = []
+    thresh_list = []
+    auroc_list = []
+    for c in range(nCTypes):
+
+        mode = 'train'
+
+        # Best model details
+        combo_type = combo_types[c]
+        model_type = model_types[mmax_ar[c]]
+        N_sample = N_samples[nmax_ar[c]]
+        r = rmax_ar[c]
+        features_to_use = feature_list[combo_type].copy()
+#        print(features_to_use)
+        if model_type == 'logistic_regression':
+            for feat in categoricals:
+                features_to_use.remove(feat)
+
+        # Save the relevant details of the best model
+        best_model_info['ref_day'][c] = ref_day
+        best_model_info['feature_combo_type'][c] = combo_type
+        best_model_info['model_type'][c] = model_type
+        best_model_info['N_sample'][c] = N_sample
+        best_model_info['realization'][c] = r
+        best_model_info['oversample'][c] = oversample
+
+        # Re-fit best model to training set and save the model
+        [model,
+         predictions,
+         probabilities,
+         auc_roc,
+         conf_mat,
+         false_positive_rate,
+         true_positive_rate,
+         thresholds] = train_and_test_model(model_type,
+                                            features_train[N_sample][r],
+                                            features_to_use,
+                                            'cutoff')
+        print(N_sample,r,model_type,combo_type,auc_roc)
+
+        # Save model
+        model_file = model_save_dir + '/model.{:s}.{:s}.N{:02d}.{:s}.{:s}.r{:d}{:s}.sav'.format(model_type, ref_day, N_sample, mode, combo_type, r, oversample_str)
+        pickle.dump(model, open(model_file, 'wb'))
+        model_file_best = model_save_dir + '/model.{:s}.best.sav'.format(combo_type)
+        copyfile(model_file, model_file_best)
     
-    # Now validate best model on test set
-    [predictions, probabilities, conf_mat,
-     false_positive_rate, true_positive_rate,
-     thresholds, auc_roc] = apply_fitted_model(model, features_test[N_sample][r], features_to_use,
-                                               score=True, labels=labels_test[N_sample][r])
-    print('Perf on test data: combo_type:', combo_types[c], 'r', r, 'auroc:', auc_roc)
-    conf_mat_list.append(conf_mat)
-    fpr_list.append(false_positive_rate)
-    tpr_list.append(true_positive_rate)
-    thresh_list.append(thresholds)
-    auroc_list.append(np.round(auc_roc,3))
-    print(conf_mat)
-    print(thresholds)
-    print(false_positive_rate)
-    print(true_positive_rate)
+
+        # Now validate best model on test set
+        [predictions,
+         probabilities,
+         conf_mat,
+         false_positive_rate,
+         true_positive_rate,
+         thresholds,
+         auc_roc] = apply_fitted_model(model,
+                                       features_test[N_sample][r],
+                                       features_to_use,
+                                       score=True,
+                                       labels=labels_test[N_sample][r])
+        print('Perf on test data: combo_type:', combo_type,
+              'r', r, 'auroc:', auc_roc)
+        conf_mat_list.append(conf_mat)
+        fpr_list.append(false_positive_rate)
+        tpr_list.append(true_positive_rate)
+        thresh_list.append(thresholds)
+        auroc_list.append(np.round(auc_roc,3))
+        print(conf_mat)
+        print(thresholds)
+        print(false_positive_rate)
+        print(true_positive_rate)
     
-    if model_type == 'random_forest':
-        # Write feature importances to a file
-        importances = model.feature_importances_
-        print('importances',importances)
-        imp_file = model_perf_dir + '/importances.{:s}.{:s}.N{:02d}.{:s}.{:s}.r{:d}{:s}.txt'.format(model_type, today_str,
-                                                                                                    N_sample, mode, combo_types[c],
-                                                                                                    r, oversample_str)
-        f = open(perf_file, 'w')
-        tmpstr = ','.join(str(importances)) + '\n'
-        f.write(tmpstr)
-        f.close()
+        if model_type == 'random_forest':
+            # Write feature importances to a file
+            importances = model.feature_importances_
+            print('importances',importances)
+            imp_file = model_perf_dir + '/importances.{:s}.{:s}.N{:02d}.{:s}.{:s}.r{:d}{:s}.txt'.format(model_type, ref_day, N_sample, mode, combo_type, r, oversample_str)
+            f = open(perf_file, 'w')
+            tmpstr = ','.join(str(importances)) + '\n'
+            f.write(tmpstr)
+            f.close()
         
-    # Copy feature tables with best N_sample to 'best'
-    for mode in ['train','current']:
+        # Copy feature tables with best N_sample to 'best'
         feature_dir = '../data/feature_tables.{:s}'.format(mode)
-        if mode == 'train':
-            r_str_list = ['.r0','.r1','.r2']
-        else:
-            r_str_list = ['']
+        r_str_list = ['.r0','.r1','.r2']
         for r_str in r_str_list:
-            infile = feature_dir + '/feature_table.{:s}.N{:02d}.{:s}{:s}.csv'.format(today_str, N_sample, mode, r_str)
-            outfile = feature_dir + '/feature_table.{:s}.{:s}{:s}.best.csv'.format(today_str, combo_types[c], r_str)
+            infile = feature_dir + '/feature_table.{:s}.N{:02d}.{:s}{:s}.csv'.format(ref_day, N_sample, mode, r_str)
+            outfile = feature_dir + '/feature_table.{:s}.{:s}{:s}.best.csv'.format(ref_day, combo_type, r_str)
             copyfile(infile, outfile)
 
-    fig, ax = plt.subplots(nrows=1,ncols=1, figsize=(6,3))
-    ax.plot(fpr_list[c], tpr_list[c])
-    ax.plot([0,1],[0,1],'k--',linewidth=0.5)
-    ax.set_xlabel('False Positive Rate')
-    ax.set_ylabel('True Positive Rate')
-    ax.text(0.05, 0.92, 'AUC: ' + str(auroc_list[c]))
-    plt.tight_layout()
-    fig.show()
-    filename = 'roc.{:s}.{:s}.best.png'.format(today_str, combo_types[c])
-    fig.savefig(filename)
+    # Save the relevant details of the best model
+    best_model_info_file = config['TRAINING']['BEST_MODEL_INFO_FILE']
+    df_best_model_info = pd.DataFrame(data=best_model_info)
+    df_best_model_info.to_csv(best_model_info_file)
 
+    return 0

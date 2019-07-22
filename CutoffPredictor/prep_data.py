@@ -129,7 +129,7 @@ def address_to_latlon(config, df_location):
     url = 'https://maps.googleapis.com/maps/api/geocode/json'
     params = {
         'sensor': 'false',
-        'key': config['google_maps_api_key'],
+        'key': config['MAPPING']['GOOGLE_MAPS_API_KEY'],
     }
     nLocs = len(df_location['location_id'].values)
     lat = np.empty([nLocs])

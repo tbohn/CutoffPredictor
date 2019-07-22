@@ -399,29 +399,40 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
     return feature_table
         
         
-def create_and_prep_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
-                                  df_charge_align_clean, df_volume_align_clean,
-                                  today, mode, N_sample):
+def create_and_prep_feature_table(df_occupant, df_location, df_meter,
+                                  df_cutoffs, df_charge_align_clean,
+                                  df_volume_align_clean, ref_day, mode,
+                                  N_sample):
+
+    today = pd.to_datetime(ref_day)
 
     # Create feature table
-    feature_table = create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
-                                         df_charge_align_clean, df_volume_align_clean,
+    feature_table = create_feature_table(df_occupant, df_location,
+                                         df_meter, df_cutoffs,
+                                         df_charge_align_clean,
+                                         df_volume_align_clean,
                                          today, mode, N_sample)
 
-    collist = ['late_frac','mean_charge_tot','mean_charge_late','mean_vol','skew_vol',
+    collist = ['late_frac', 'mean_charge_tot', 'mean_charge_late',
+               'mean_vol', 'skew_vol',
                'n_anom3_vol','n_anom4_vol','n_anom5_vol','max_anom_vol',
-               'n_anom3_vol_log','n_anom4_vol_log','n_anom5_vol_log','max_anom_vol_log',
-               'n_anom3_local_vol','n_anom4_local_vol','n_anom5_local_vol','max_anom_local_vol',
-               'n_anom3_local_vol_log','n_anom4_local_vol_log','n_anom5_local_vol_log','max_anom_local_vol_log',
+               'n_anom3_vol_log','n_anom4_vol_log',
+               'n_anom5_vol_log','max_anom_vol_log',
+               'n_anom3_local_vol','n_anom4_local_vol',
+               'n_anom5_local_vol','max_anom_local_vol',
+               'n_anom3_local_vol_log','n_anom4_local_vol_log',
+               'n_anom5_local_vol_log','max_anom_local_vol_log',
               ]
 
     # Handle customers that are missing stats
     if mode == 'train':
         # Populate stats of cutoff customers who have no stats with random samples from those with stats
         for col in collist:
-            df = feature_table.loc[feature_table[col].isna(), ['occupant_id','cutoff']].copy()
+            df = feature_table.loc[feature_table[col].isna(),
+                                   ['occupant_id','cutoff']].copy()
             occs_cut_no_stats = df.loc[df['cutoff'] == 1, 'occupant_id'].values
-            df = feature_table.loc[feature_table[col].notna(), ['occupant_id','cutoff']].copy()
+            df = feature_table.loc[feature_table[col].notna(),
+                                   ['occupant_id','cutoff']].copy()
             occs_cut_stats = df.loc[df['cutoff'] == 1, 'occupant_id'].values
             nOccsCutStats = len(occs_cut_stats)
             df = feature_table.loc[feature_table[col].notna()].copy()
@@ -432,7 +443,8 @@ def create_and_prep_feature_table(df_occupant, df_location, df_meter, df_cutoffs
 
         # Remove nocut customers who don't have stats
         for col in collist:
-            df = feature_table.loc[feature_table[col].isna(), ['occupant_id','cutoff']].copy()
+            df = feature_table.loc[feature_table[col].isna(),
+                                   ['occupant_id','cutoff']].copy()
             occs_nocut_no_stats = df.loc[df['cutoff'] == 0, 'occupant_id'].values
             for occ in occs_nocut_no_stats:
                 feature_table = feature_table.loc[feature_table['occupant_id'] != occ]
@@ -451,17 +463,18 @@ def prep_features(config, df_meter, df_location, df_occupant,
                   df_volume, df_charge, df_cutoffs, mode):
 
     if mode == 'train':
-        N_sample_list = config['N_sample_list']
-        N_realizations = config['N_realizations']
-        ref_day = config['train_day']
-        outdir = config['feature_table_hist_dir']
+        N_sample_list_str = config['TRAINING']['N_SAMPLE_LIST']
+        N_sample_list = N_sample_list_str.split(',')
+        N_realizations = config['TRAINING']['N_REALIZATIONS']
+        ref_day = config['TRAINING']['REF_DAY']
+        outdir = config['PATHS']['FEATURE_TABLE_DIR_TRAIN']
     else:
-# read N_sample from a file!!!!!!!!!
-# filename must be derivable from config dict: config['best_model_info_file']
-        N_sample_list = [N_sample]
+        best_model_info_file = config['TRAINING']['BEST_MODEL_INFO_FILE']
+        df_best_model_info = pd.read_csv(best_model_info_file)
+        N_sample_list = [df_best_model_info['N_sample'].values[0]]
         N_realizations = 1
-        ref_day = config['pred_day']
-        outdir = config['feature_table_curr_dir']
+        ref_day = config['PREDICT']['REF_DAY']
+        outdir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
 
     np.random.seed(0)
     for N_sample in N_sample_list:
@@ -479,7 +492,7 @@ def prep_features(config, df_meter, df_location, df_occupant,
                 rstr = '.r{:d}'.format(r)
             else:
                 rstr = ''
-            outfile = outdir + '/feature_table.{:s}.N{:02d}.{:s}{:s}.csv'.format(config['train_day'], N_sample, mode, rstr)
+            outfile = outdir + '/feature_table.{:s}.N{:02d}.{:s}{:s}.csv'.format(ref_day, N_sample, mode, rstr)
             print('writing to', outfile)
             feature_table.to_csv(outfile)
 
