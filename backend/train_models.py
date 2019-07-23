@@ -161,10 +161,8 @@ def train_and_compare_models(config):
     # Train/Test various models
 
     ref_day = config['TRAINING']['REF_DAY']
-    model_type_list_str = config['TRAINING']['MODEL_TYPES']
-    model_types = model_type_list_str.split(',')
-    combo_type_list_str = config['TRAINING']['COMBO_TYPES']
-    combo_types = combo_type_list_str.split(',')
+    model_types = config['TRAINING']['MODEL_TYPES']
+    combo_types = config['TRAINING']['COMBO_TYPES']
     feature_list = {
         'with_cut_prior': [
             'late_frac','zero_frac_vol','cut_prior','nCutPrior',
@@ -184,8 +182,8 @@ def train_and_compare_models(config):
         ],
     }
     categoricals = ['cust_type_code','municipality']
-    N_sample_list_str = config['TRAINING']['N_SAMPLE_LIST']
-    N_sample_list = N_sample_list_str.split(',')
+    N_sample_list = config['TRAINING']['N_SAMPLE_LIST']
+    N_sample_list = list(map(int, N_sample_list))
     nN_samples = len(N_sample_list)
     nRealizations = config['TRAINING']['N_REALIZATIONS']
     feature_dir = config['PATHS']['FEATURE_TABLE_DIR_TRAIN']
@@ -211,10 +209,10 @@ def train_and_compare_models(config):
         
             # Read feature table
             infile = feature_dir + '/feature_table.{:s}.N{:02d}.{:s}.r{:d}.csv'.format(ref_day, N_sample, mode, r)
-            print('reading', infile)
+            print('....reading', infile)
             feature_table = pd.read_csv(infile)
 
-            # Prepare train and test datasets
+           # Prepare train and test datasets
             oversample = True
             oversample_str = '.os'
             feature_list_all = feature_list=['with_cut_prior']
@@ -249,7 +247,7 @@ def train_and_compare_models(config):
                                                         features_train[N_sample][r],
                                                         features_to_use,
                                                         'cutoff')
-                    print(N_sample,r,combo_types[c],model_type,auc_roc)
+                    print('....N_sample',N_sample,'realization',r,combo_types[c],model_type,'AUC_ROC',auc_roc)
             
 
                     # Write performance metrics to a file
@@ -366,7 +364,7 @@ def train_and_compare_models(config):
                                             features_train[N_sample][r],
                                             features_to_use,
                                             'cutoff')
-        print(N_sample,r,model_type,combo_type,auc_roc)
+#        print('N_sample',N_sample,'realization',r,model_type,combo_type,'AUX_ROC',auc_roc)
 
         # Save model
         model_file = model_save_dir + '/model.{:s}.{:s}.N{:02d}.{:s}.{:s}.r{:d}{:s}.sav'.format(model_type, ref_day, N_sample, mode, combo_type, r, oversample_str)

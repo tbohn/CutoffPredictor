@@ -12,14 +12,14 @@ def save_tables(outdir, df_meter, df_location, df_occupant,
     df_charge.to_csv(outdir + '/charge.csv')
     df_cutoffs.to_csv(outdir + '/cutoffs.csv')
 
-def read_tables(indir)
+def read_tables(indir):
 
-    df_meter = read_csv(indir + '/meter.csv')
-    df_location = read_csv(indir + '/location.csv')
-    df_occupant = read_csv(indir + '/occupant.csv')
-    df_volume = read_csv(indir + '/volume.csv')
-    df_charge = read_csv(indir + '/charge.csv')
-    df_cutoffs = read_csv(indir + '/cutoffs.csv')
+    df_meter = pd.read_csv(indir + '/meter.csv')
+    df_location = pd.read_csv(indir + '/location.csv')
+    df_occupant = pd.read_csv(indir + '/occupant.csv')
+    df_volume = pd.read_csv(indir + '/volume.csv')
+    df_charge = pd.read_csv(indir + '/charge.csv')
+    df_cutoffs = pd.read_csv(indir + '/cutoffs.csv')
 
     return [df_meter, df_location, df_occupant,
             df_volume, df_charge, df_cutoffs]

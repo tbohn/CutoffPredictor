@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import argparse
 import os.path
-from CutoffPredictor import config
+from . import config
 import dash
 from dash.dependencies import Input, Output, State
 import dash_core_components as dcc

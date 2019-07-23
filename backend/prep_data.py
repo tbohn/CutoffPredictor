@@ -3,10 +3,10 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import requests
-from CutoffPredictor import table_columns
+from . import table_columns as tc
 
 # Integrity check on occupant table
-def occupant_integrity():
+def occupant_integrity(df_occupant):
 
     past = pd.Timestamp('1800-01-01')
     future = pd.Timestamp('2099-12-31')
@@ -34,13 +34,15 @@ def occupant_integrity():
 
 
 # Ensure consistent date formats in all tables
-def date_consistency(df_charge, df_volume, df_cutoffs):
+def date_consistency(df_occupant, df_charge, df_volume, df_cutoffs):
 
+    df_occupant['move_in_date'] = pd.to_datetime(df_occupant['move_in_date'])
+    df_occupant['move_out_date'] = pd.to_datetime(df_occupant['move_out_date'])
     df_charge['billing_period_end'] = pd.to_datetime(df_charge['billing_period_end'])
     df_volume['meter_read_at'] = pd.to_datetime(df_volume['meter_read_at'])
     df_cutoffs['cutoff_at'] = pd.to_datetime(df_cutoffs['cutoff_at'])
 
-    return [df_charge, df_volume, df_cutoffs]
+    return [df_occupant, df_charge, df_volume, df_cutoffs]
 
 
 # Create unique occupant_id strings
@@ -215,8 +217,9 @@ def align_dates_monthly(df, date_col_name, col_names_data, align_mode='pad'):
 def wrap_align_dates(df_charge, df_volume):
 
     # Charge table
-    col_names_data_charge = tables_and_columns['charge'].copy()
-    col_names_data_charge.delete('charge_id','cis_bill_id','billing_period_end')
+    col_names_data_charge = tc.tables_and_columns['charge'].copy()
+    for col in ['charge_id','cis_bill_id','billing_period_end']:
+        col_names_data_charge.remove(col)
     i = 0
     for occ in df_charge['occupant_id'].unique():
         df = df_charge.loc[df_charge['occupant_id'] == occ].sort_values(by='billing_period_end').copy()
@@ -231,8 +234,9 @@ def wrap_align_dates(df_charge, df_volume):
         i += 1
 
     # Volume table
-    col_names_data_volume = tables_and_columns['volume'].copy()
-    col_names_data_volume.delete('meter_id','charge_id','meter_read_at')
+    col_names_data_volume = tc.tables_and_columns['volume'].copy()
+    for col in ['meter_id','charge_id','meter_read_at']:
+        col_names_data_volume.remove(col)
     i = 0
     for occ in df_volume['occupant_id'].unique():
         df = df_volume.loc[df_volume['occupant_id'] == occ].sort_values(by='meter_read_at').copy()
@@ -274,7 +278,7 @@ def null_out_bad(df_volume):
 
 
 # Fill gaps
-def fill_gaps(df_charge, df_volume)
+def fill_gaps(df_charge, df_volume):
     df_charge_fill = df_charge.copy()
     for col in ['location_id']:
         df_charge_fill[col].interpolate(inplace=True)
@@ -284,7 +288,7 @@ def fill_gaps(df_charge, df_volume)
     for col in ['location_id', 'meter_id', 'volume_kgals']:
         df_volume_fill[col].interpolate(inplace=True)
     for col in ['volume_kgals']:
-        df_volume_fill[df_volume_fill[col].isna(), col] = 0
+        df_volume_fill.loc[df_volume_fill[col].isna(), col] = 0
 
     return [df_charge_fill, df_volume_fill]
 
@@ -304,30 +308,39 @@ def prep_data(config, df_meter, df_location, df_occupant,
               df_volume, df_charge, df_cutoffs):
 
     # Integrity check on occupant table
+    print('integrity check on occupant table')
     df_occupant = occupant_integrity(df_occupant)
 
     # Ensure date consistency in other tables
-    [df_charge, df_volume,
-     df_cutoffs] = date_consistency(df_charge, df_volume, df_cutoffs)
+    print('converting date columns to datetime objects')
+    [df_occupant, df_charge,
+     df_volume, df_cutoffs] = date_consistency(df_occupant, df_charge,
+                                               df_volume, df_cutoffs)
 
     # Create unique occupant_id strings
+    print('creating occupant_id')
     [df_cutoffs, df_occupant,
      df_charge, df_volume] = make_occupant_ids(df_cutoffs, df_occupant,
                                                df_charge, df_volume)
 
     # Geocode the lat/lons of the customer addresses
+    print('geocoding the lat/lons of customer addresses')
     df_location = address_to_latlon(config, df_location)
 
     # Ensure there are no missing months in the time series
+    print('ensuring that there is a record for every month')
     [df_charge, df_volume] = wrap_align_dates(df_charge, df_volume)
 
     # Null out bad values
+    print('nulling out bad values')
     df_volume = null_out_bad(df_volume)
 
     # Fill gaps
+    print('filling gaps')
     [df_charge, df_volume] = fill_gaps(df_charge, df_volume)
 
     # Create binary late column
+    print('creating late column')
     df_charge = create_late(df_charge)
 
     return [df_meter, df_location, df_occupant,

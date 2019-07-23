@@ -4,6 +4,7 @@ import numpy as np
 from statsmodels.tsa.seasonal import seasonal_decompose
 from scipy.stats import skew
 import math
+from . import prep_data as prda
 
 # Apply exponentially-decaying weights to x (backwards from end of array)
 def exp_decay_wts(x, tau):
@@ -462,16 +463,22 @@ def create_and_prep_feature_table(df_occupant, df_location, df_meter,
 def prep_features(config, df_meter, df_location, df_occupant,
                   df_volume, df_charge, df_cutoffs, mode):
 
+    # Ensure date consistency
+    print('converting date columns to datetime objects')
+    [df_occupant, df_charge,
+     df_volume, df_cutoffs] = prda.date_consistency(df_occupant, df_charge,
+                                                    df_volume, df_cutoffs)
+
     if mode == 'train':
-        N_sample_list_str = config['TRAINING']['N_SAMPLE_LIST']
-        N_sample_list = N_sample_list_str.split(',')
+        N_sample_list = config['TRAINING']['N_SAMPLE_LIST']
+        N_sample_list = list(map(int, N_sample_list))
         N_realizations = config['TRAINING']['N_REALIZATIONS']
         ref_day = config['TRAINING']['REF_DAY']
         outdir = config['PATHS']['FEATURE_TABLE_DIR_TRAIN']
     else:
-        best_model_info_file = config['TRAINING']['BEST_MODEL_INFO_FILE']
+        best_model_info_file = config['PATHS']['BEST_MODEL_INFO_FILE']
         df_best_model_info = pd.read_csv(best_model_info_file)
-        N_sample_list = [df_best_model_info['N_sample'].values[0]]
+        N_sample_list = [int(df_best_model_info['N_sample'].values[0])]
         N_realizations = 1
         ref_day = config['PREDICT']['REF_DAY']
         outdir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
@@ -479,6 +486,7 @@ def prep_features(config, df_meter, df_location, df_occupant,
     np.random.seed(0)
     for N_sample in N_sample_list:
         for r in range(N_realizations):
+            print('....N_sample',N_sample,'realization',r)
             feature_table = create_and_prep_feature_table(df_occupant,
                                                           df_location,
                                                           df_meter,
@@ -493,7 +501,7 @@ def prep_features(config, df_meter, df_location, df_occupant,
             else:
                 rstr = ''
             outfile = outdir + '/feature_table.{:s}.N{:02d}.{:s}{:s}.csv'.format(ref_day, N_sample, mode, rstr)
-            print('writing to', outfile)
+            print('....writing to', outfile)
             feature_table.to_csv(outfile)
 
     if mode == 'train':

@@ -2,7 +2,7 @@
 import psycopg2
 import pandas as pd
 import numpy as np
-from CutoffPredictor import table_columns
+from . import table_columns as tc
 
 def create_conn(*args,**kwargs):
     config = kwargs['config']
@@ -24,7 +24,7 @@ def fetch_data(config):
 
     # Construct meter dataframe, keyed by meter_id
     tables_full = [schema + '.meter']
-    columns = tables_and_columns['meter']
+    columns = tc.tables_and_columns['meter']
     columnliststr = ','.join(columns)
     query = ("SELECT " + columnliststr +
              " FROM " + tables_full[0] +
@@ -33,7 +33,7 @@ def fetch_data(config):
 
     # Construct location dataframe, keyed by location_id
     tables_full = [schema + '.meter_location']
-    columns = tables_and_columns['meter']
+    columns = tc.tables_and_columns['meter']
     columns = [
         'location_id',
 #        'data_set_id',
@@ -51,7 +51,7 @@ def fetch_data(config):
 
     # Construct occupant dataframe, keyed by id
     tables_full = [schema + '.occupant']
-    columns = tables_and_columns['meter']
+    columns = tc.tables_and_columns['meter']
     columns = [
 #        'id',
         'location_id',
@@ -71,7 +71,7 @@ def fetch_data(config):
     tables_full = []
     for name in tables:
         tables_full.append(schema + '.' + name)
-        columns = tables_and_columns['meter']
+        columns = tc.tables_and_columns['meter']
         columns = [
         tables_full[0] + '.' + 'location_id',
         tables_full[1] + '.' + 'meter_id',
@@ -100,9 +100,9 @@ def fetch_data(config):
     tables_full = []
     for name in tables:
         tables_full.append(schema + '.' + name)
-    columns = tables_and_columns['meter_location']
-    columns['location_id'] = tables_full[0] + . + columns['location_id']
-    columns['data_set_id'] = tables_full[0] + . + columns['data_set_id']
+    columns = tc.tables_and_columns['meter_location']
+    columns['location_id'] = tables_full[0] + '.' + columns['location_id']
+    columns['data_set_id'] = tables_full[0] + '.' + columns['data_set_id']
     columnliststr = ','.join(columns)
     query = ("SELECT " + columnliststr +
              " FROM " + tables_full[0] +
@@ -118,8 +118,8 @@ def fetch_data(config):
     tables_full = []
     for name in tables:
         tables_full.append(schema + '.' + name)
-    columns = tables_and_columns['cutoffs']
-    columns['location_id'] = tables_full[0] + . + columns['location_id']
+    columns = tc.tables_and_columns['cutoffs']
+    columns['location_id'] = tables_full[0] + '.' + columns['location_id']
     columnliststr = ','.join(columns)
     query = ("SELECT " + columnliststr +
              " FROM " + tables_full[0] +

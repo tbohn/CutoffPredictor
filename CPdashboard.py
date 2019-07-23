@@ -2,8 +2,7 @@
 
 import argparse
 import os.path
-from CutoffPredictor import config
-from CutoffPredictor import process_wrapper
+from dashboard import app
 
 # -------------------------------------------------------------------- #
 def main():
@@ -22,7 +21,7 @@ def main():
     args = parser.parse_args()
 
     if args.version:
-        from CutoffPredictor import version
+        from backend import version
         print(version.short_version)
         return
 
@@ -31,9 +30,10 @@ def main():
             raise IOError('config_file: {0} does not '
                           'exist'.format(args.config_file))
         else:
-            process_wrapper(args.config_file)
+            app.dashboard(args.config_file)
     else:
         parser.print_help()
+
     return
 # -------------------------------------------------------------------- #
 

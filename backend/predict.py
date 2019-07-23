@@ -23,15 +23,15 @@ def make_prediction(config, feature_table):
     mode = 'predict'
     feature_dir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
     prediction_dir = config['PATHS']['PREDICTIONS_DIR_PRED']
-NOTE build this from best_model_info?
-NOTE or just have it titled 'best'?
+#NOTE build this from best_model_info?
+#NOTE or just have it titled 'best'?
     infile = feature_dir + '/feature_table.{:s}.{:s}.best.csv'.format(today_str, combo_type)
     print('reading', infile)
     feature_table = pd.read_csv(infile)
             
     # Read saved model
-NOTE build this from best_model_info?
-NOTE or just have it titled 'best'?
+#NOTE build this from best_model_info?
+#NOTE or just have it titled 'best'?
     model_save_dir = config['PATHS']['SAVED_MODELS_DIR']
     model_file = model_save_dir + '/model.{:s}.{:s}.N{:02d}.{:s}.{:s}.r{:d}{:s}.sav'.format(model_type, today_str, N_sample, 'train', combo_type, r, oversample_str)
     print('loading', model_file)
