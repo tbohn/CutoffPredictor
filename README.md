@@ -86,8 +86,11 @@ The user must supply CutoffPredictor with a top-level directory for storing data
 ## [Inputs](Documentation/inputs.md)
 
 1. [Utility database](Documentation/database_tables.md)
+
   - this is a SQL database (CutoffPredictor uses PostgreSQL)
+
 2. [Configuration file](Documentation/config.md)
+
   - this can be derived from the template under config/
 
 ## Usage
