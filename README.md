@@ -93,20 +93,20 @@ The user must supply CutoffPredictor with a top-level directory for storing data
 ## Usage
 1. Back end
 
-    python CutoffPredictor.py config_file >& log_file
+        python CutoffPredictor.py config_file >& log_file
 
-  where
+    where
 
-    config_file = input config file, derived from the template
-    log_file = log file to store progress messages
+        config_file = input config file, derived from the template
+        log_file = log file to store progress messages
 
 2. Dashboard
 
-    python CPdashboard.py config_file >& log_file
+        python CPdashboard.py config_file >& log_file
 
-  where
+    where
 
-    config_file = input config file, derived from the template
-    log_file = log file to store progress messages
+        config_file = input config file, derived from the template
+        log_file = log file to store progress messages
 
 Both the back end and the dashboard use the same [config file](Documentation/config.md).
