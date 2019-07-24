@@ -17,6 +17,36 @@ CutoffPredictor consists of:
 2. Dashboard
 - Plotly/Dash app accessible via a web browser (127.0.0.1:8050)
 - Reads the prediction and displays interactive analytics
+
+## Requirements
+
+Accounts:
+- An account to access the utility database
+- Google Maps
+- MapBox
+
+Software requirements:
+- PostgreSQL
+- Flask
+- Plotly/Dash
+- Python 3.4 or later; with the following packages:
+  - pandas
+  - numpy
+  - scipy
+  - math
+  - datetime
+  - requests
+  - psycopg2 (PostgreSQL interface)
+  - statsmodels.tsa.seasonal (currently the functions that use this are not called; probably can remove this)
+  - sklearn
+  - imblearn (for SMOTE oversampling)
+  - shutil
+  - pickle
+  - argparse
+  - os
+  - flask
+  - plotly
+  - dash
  
 ## Code
 
@@ -56,7 +86,7 @@ The user must supply CutoffPredictor with a top-level directory for storing data
 ## [Inputs](Documentation/inputs.md)
 
 1. [Utility database](Documentation/database_tables.md)
-  - this is an Amazon Redshift database
+  - this is a SQL database (CutoffPredictor uses PostgreSQL)
 2. [Configuration file](Documentation/config.md)
   - this can be derived from the template under config/
 
