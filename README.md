@@ -5,18 +5,18 @@ Tool for water utilities to monitor and predict customers' risk of service inter
 
 CutoffPredictor consists of:
 1. Back end
-- A machine learning model is trained periodically, via the following steps:
-  - query the utility's database
-  - clean the data and prepare features
-  - train several machine learning models over a range of parameters
-  - select the best-performing model
-- On a monthly or daily basis, the user can make a prediction:
-  - query the utility's database (to get recent records)
-  - clean the data and prepare features
-  - apply the best-performing model parameters from the training phase
+  - A machine learning model is trained periodically, via the following steps:
+    - query the utility's database
+    - clean the data and prepare features
+    - train several machine learning models over a range of parameters
+    - select the best-performing model
+  - On a monthly or daily basis, the user can make a prediction:
+    - query the utility's database (to get recent records)
+    - clean the data and prepare features
+    - apply the best-performing model parameters from the training phase
 2. Dashboard
-- Plotly/Dash app accessible via a web browser (127.0.0.1:8050)
-- Reads the prediction and displays interactive analytics
+  - Plotly/Dash app accessible via a web browser (127.0.0.1:8050)
+  - Reads the prediction and displays interactive analytics
 
 ## Requirements
 
@@ -92,14 +92,20 @@ The user must supply CutoffPredictor with a top-level directory for storing data
 
 ## Usage
 1. Back end
+
     python CutoffPredictor.py config_file >& log_file
+
   where
+
     config_file = input config file, derived from the template
     log_file = log file to store progress messages
 
 2. Dashboard
+
     python CPdashboard.py config_file >& log_file
+
   where
+
     config_file = input config file, derived from the template
     log_file = log file to store progress messages
 
