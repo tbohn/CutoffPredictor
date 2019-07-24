@@ -4,7 +4,7 @@ Tool for water utilities to monitor and predict customers' risk of service inter
 ## Overview
 
 CutoffPredictor consists of:
-1. Back end
+'1'. Back end
   - A machine learning model is trained periodically, via the following steps:
     - query the utility's database
     - clean the data and prepare features
