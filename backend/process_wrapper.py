@@ -82,16 +82,19 @@ def process_wrapper(config_file):
     # Make prediction for current day
     if config['STAGES']['PREDICT']:
 
-        # Generate a feature table for current day
-        print('preparing feature table')
-        feature_table = prfe.prep_features(config, df_meter, df_location,
-                                           df_occupant, df_volume, df_charge,
-                                           df_cutoffs, 'predict')
+        # Read from .csv files
+        print('reading from .csv files')
+        [df_meter, df_location,
+         df_occupant, df_volume,
+         df_charge, df_cutoffs] = \
+            io.read_tables(config['PATHS']['DATA_TABLE_CLEAN_DIR'])
 
-        # Run the model, saving predictions to a place
+        # Prepare feature table for the best model and
+        # run the model, saving predictions to a place
         # that the dashboard knows about
-        print('making prediciton')
-        pred.make_prediction(config, feature_table)
+        print('making prediction')
+        pred.make_prediction(config, df_meter, df_location, df_occupant,
+                             df_volume, df_charge, df_cutoffs)
 
 
     return 0

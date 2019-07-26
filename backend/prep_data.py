@@ -16,17 +16,21 @@ def occupant_integrity(df_occupant):
         cis_occupant_id_list = np.asarray(dfo['cis_occupant_id'].unique())
         nOccs = len(cis_occupant_id_list)
         for i in range(nOccs):
-            df = dfo.loc[dfo['cis_occupant_id'] == cis_occupant_id_list[i]].copy()
+            df = dfo.loc[dfo['cis_occupant_id'] == cis_occupant_id_list[i]] \
+                .copy()
             if len(df) > 1:
                 df = df.loc[~pd.isnull(df['move_out_date'])]
-            df.loc[pd.isnull(df['move_in_date']), 'move_in_date'] = str(past.date())
-            df.loc[pd.isnull(df['move_out_date']), 'move_out_date'] = str(future.date())
+            df.loc[pd.isnull(df['move_in_date']), 'move_in_date'] = \
+                str(past.date())
+            df.loc[pd.isnull(df['move_out_date']), 'move_out_date'] = \
+                str(future.date())
             df['move_in_date'] = pd.to_datetime(df['move_in_date'])
             df['move_out_date'] = pd.to_datetime(df['move_out_date'])
             if k == 0:
                 df_occupant_new = df.copy()
             else:
-                df_occupant_new = df_occupant_new.append(df, ignore_index=True, sort=False)
+                df_occupant_new = df_occupant_new.append(df, ignore_index=True,
+                                                         sort=False)
         k += 1
     df_occupant = df_occupant_new
 
@@ -38,7 +42,8 @@ def date_consistency(df_occupant, df_charge, df_volume, df_cutoffs):
 
     df_occupant['move_in_date'] = pd.to_datetime(df_occupant['move_in_date'])
     df_occupant['move_out_date'] = pd.to_datetime(df_occupant['move_out_date'])
-    df_charge['billing_period_end'] = pd.to_datetime(df_charge['billing_period_end'])
+    df_charge['billing_period_end'] = \
+        pd.to_datetime(df_charge['billing_period_end'])
     df_volume['meter_read_at'] = pd.to_datetime(df_volume['meter_read_at'])
     df_cutoffs['cutoff_at'] = pd.to_datetime(df_cutoffs['cutoff_at'])
 
@@ -49,11 +54,13 @@ def date_consistency(df_occupant, df_charge, df_volume, df_cutoffs):
 def make_occupant_ids(df_cutoffs, df_occupant, df_charge, df_volume):
 
     # Create compound key to identify occupants
-    df_cutoffs['occupant_id'] = df_cutoffs['location_id'].astype(str) + '-' + df_cutoffs['cis_occupant_id'].astype(int).map('{:03d}'.format)
-    df_occupant['occupant_id'] = df_occupant['location_id'].astype(str) + '-' + df_occupant['cis_occupant_id'].astype(int).map('{:03d}'.format)
+    df_cutoffs['occupant_id'] = df_cutoffs['location_id'].astype(str) + \
+        '-' + df_cutoffs['cis_occupant_id'].astype(int).map('{:03d}'.format)
+    df_occupant['occupant_id'] = df_occupant['location_id'].astype(str) + \
+        '-' + df_occupant['cis_occupant_id'].astype(int).map('{:03d}'.format)
 
-    # For timeseries, for each location and occupant, label records at the location
-    # that fall within occupant move-in and move-out date range
+    # For timeseries, for each location and occupant, label records at the
+    # location that fall within occupant move-in and move-out date range
     # with the compound occupant_id - this will make later processing easier
 
     # Charge dataframe
@@ -64,8 +71,10 @@ def make_occupant_ids(df_cutoffs, df_occupant, df_charge, df_volume):
     k = 0
     for loc in locations_charged:
         dfc = df_charge.loc[df_charge['location_id'] == loc].copy()
-        bill_first = dfc.loc[dfc['location_id'] == loc, 'billing_period_end'].min()
-        bill_last = dfc.loc[dfc['location_id'] == loc, 'billing_period_end'].max()
+        bill_first = dfc.loc[dfc['location_id'] == loc, 'billing_period_end'] \
+            .min()
+        bill_last = dfc.loc[dfc['location_id'] == loc, 'billing_period_end'] \
+            .max()
         if loc in df_occupant['location_id'].unique():
             dfo = df_occupant.loc[df_occupant['location_id'] == loc]
             cis_occupant_id_list = np.asarray(dfo['cis_occupant_id'].values)
@@ -81,11 +90,14 @@ def make_occupant_ids(df_cutoffs, df_occupant, df_charge, df_volume):
             move_in_date = move_in_date_list[i]
             move_out_date = move_out_date_list[i]
             occupant_id = '{:d}-{:03d}'.format(loc,cis_occupant_id)
-            dfc.loc[dfc['billing_period_end'].between(move_in_date, move_out_date), 'occupant_id'] = occupant_id
+            dfc.loc[dfc['billing_period_end'].between(move_in_date,
+                                                      move_out_date),
+                    'occupant_id'] = occupant_id
         if k == 0:
             df_charge_new = dfc.copy()
         else:
-            df_charge_new = df_charge_new.append(dfc, ignore_index=True, sort=False)
+            df_charge_new = df_charge_new.append(dfc, ignore_index=True,
+                                                 sort=False)
         k += 1
     df_charge = df_charge_new
 
@@ -114,11 +126,13 @@ def make_occupant_ids(df_cutoffs, df_occupant, df_charge, df_volume):
             move_in_date = move_in_date_list[i]
             move_out_date = move_out_date_list[i]
             occupant_id = '{:d}-{:03d}'.format(loc,cis_occupant_id)
-            dfv.loc[dfv['meter_read_at'].between(move_in_date, move_out_date), 'occupant_id'] = occupant_id
+            dfv.loc[dfv['meter_read_at'].between(move_in_date, move_out_date),
+                    'occupant_id'] = occupant_id
         if k == 0:
             df_volume_new = dfv.copy()
         else:
-            df_volume_new = df_volume_new.append(dfv, ignore_index=True, sort=False)
+            df_volume_new = df_volume_new.append(dfv, ignore_index=True,
+                                                 sort=False)
         k += 1
     df_volume = df_volume_new
 
@@ -134,11 +148,13 @@ def address_to_latlon(config, df_location):
         'key': config['MAPPING']['GOOGLE_MAPS_API_KEY'],
     }
     nLocs = len(df_location['location_id'].values)
+    print('nLocs',nLocs)
     lat = np.empty([nLocs])
     lng = np.empty([nLocs])
     i = 0
     for loc in df_location['location_id'].values:
-        address = np.asscalar(df_location.loc[df_location['location_id'] == loc, 'meter_address'])
+        address = np.asscalar(df_location.loc[df_location['location_id'] == loc,
+                                              'meter_address'])
         address = address[:-5]
         params['address'] = address
         response = requests.get(url, params=params)
@@ -181,7 +197,8 @@ def divide_by_nrecs(row, col_name, dtype):
 # Ensure that there are no missing months in the timeseries
 def align_dates_monthly(df, date_col_name, col_names_data, align_mode='pad'):
 
-    df['date_align'] = df[date_col_name].map(lambda x: dt.datetime(x.year, x.month, 1))
+    df['date_align'] = df[date_col_name].map(lambda x: dt.datetime(x.year,
+                                                                   x.month, 1))
     df['year'] = pd.DatetimeIndex(df[date_col_name]).year
     df['month'] = pd.DatetimeIndex(df[date_col_name]).month
     df['day'] = pd.DatetimeIndex(df[date_col_name]).day
@@ -195,7 +212,8 @@ def align_dates_monthly(df, date_col_name, col_names_data, align_mode='pad'):
                 df[col] = df.apply(divide_by_nrecs, args=(col, 'int'), axis=1)
             if align_mode == 'mean':
                 for col in col_names_data:
-                    df[col] = df[col].apply(divide_by_nrecs, args=(col, 'float'), axis=1)
+                    df[col] = df[col].apply(divide_by_nrecs,
+                                            args=(col, 'float'), axis=1)
             df.drop(columns=['nRecs'], inplace=True)
         else:
             df = df.resample('M').pad()
@@ -217,12 +235,14 @@ def align_dates_monthly(df, date_col_name, col_names_data, align_mode='pad'):
 def wrap_align_dates(df_charge, df_volume):
 
     # Charge table
+    print('aligning dates: charge table')
     col_names_data_charge = tc.tables_and_columns['charge'].copy()
     for col in ['charge_id','cis_bill_id','billing_period_end']:
         col_names_data_charge.remove(col)
     i = 0
     for occ in df_charge['occupant_id'].unique():
-        df = df_charge.loc[df_charge['occupant_id'] == occ].sort_values(by='billing_period_end').copy()
+        df = df_charge.loc[df_charge['occupant_id'] == occ] \
+            .sort_values(by='billing_period_end').copy()
         df_new = align_dates_monthly(df, 'billing_period_end',
                                      col_names_data_charge,
                                      align_mode='pad')
@@ -234,12 +254,14 @@ def wrap_align_dates(df_charge, df_volume):
         i += 1
 
     # Volume table
+    print('aligning dates: volume table')
     col_names_data_volume = tc.tables_and_columns['volume'].copy()
     for col in ['meter_id','charge_id','meter_read_at']:
         col_names_data_volume.remove(col)
     i = 0
     for occ in df_volume['occupant_id'].unique():
-        df = df_volume.loc[df_volume['occupant_id'] == occ].sort_values(by='meter_read_at').copy()
+        df = df_volume.loc[df_volume['occupant_id'] == occ] \
+            .sort_values(by='meter_read_at').copy()
         df_new = align_dates_monthly(df, 'meter_read_at',
                                      col_names_data_volume,
                                      align_mode='pad')

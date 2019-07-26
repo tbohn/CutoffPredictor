@@ -57,11 +57,11 @@ The keys that need to be defined are:
   - `N_SAMPLE_LIST` = comma-separated list of sample window lengths to consider (in months)
   - `N_REALIZATIONS` = number of realizations of random window positions
   - `MODEL_TYPES` = comma-separated list of model types (no spaces); valid values are 'logistic_regression' or 'random_forest'
-  - `COMBO_TYPES` = comma-separated list of feature combination types (no spaces); valid values are 'with_cutoff_prior' or 'omit_cutoff_prior'
-  - `REF_DAY` = reference day (yyyy-mm-dd; records after this day are omitted)
+  - `COMBO_TYPES` = comma-separated list of feature combination types (no spaces); valid values are 'with_cut_prior' or 'omit_cut_prior'
+  - `REF_DAY` = reference day (yyyy-mm-dd); this is the end date of the train/test period
 
 6. `[PREDICTION]` section:
 - Parameters for prediction
-  - `COMBO_TYPE` = feature combination type desired for the prediction; valid values are 'with_cutoff_prior' or 'omit_cutoff_prior'
-  - `REF_DAY` = reference day (yyyy-mm-dd; prediction is relative to this date)
+  - `COMBO_TYPE` = feature combination type desired for the prediction; valid values are 'with_cut_prior' or 'omit_cut_prior'
+  - `REF_DAY` = reference day (yyyy-mm-dd); this is the current date at the time of the prediction
 
