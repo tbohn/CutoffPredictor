@@ -2,6 +2,7 @@
 
 import argparse
 import os.path
+from backend import config as cfg
 from dashboard import app
 
 # -------------------------------------------------------------------- #
@@ -30,7 +31,13 @@ def main():
             raise IOError('config_file: {0} does not '
                           'exist'.format(args.config_file))
         else:
-            app.dashboard(args.config_file)
+            # Read config_file
+            if isinstance(args.config_file, dict):
+                config = args.config_file
+            else:
+                config = cfg.read_config(args.config_file)
+            # Start the dashboard
+            app.dashboard(config)
     else:
         parser.print_help()
 

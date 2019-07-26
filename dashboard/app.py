@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 import argparse
 import os.path
-from . import config
 import dash
 from dash.dependencies import Input, Output, State
 import dash_core_components as dcc
@@ -16,143 +15,10 @@ import math
 
 # -------------------------------------------------------------------- #
 #
-# Define functions called by dashboard objects
-#
-# -------------------------------------------------------------------- #
-
-# Fetch the dataset
-def read_df(config):
-
-    today_str = config['PREDICTION']['REF_DAY']
-    combo_type = config['PREDICTION']['FEATURE_COMBO_TYPE']
-
-    # Read the feature file
-    feature_dir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
-    feature_file = feature_dir + '/feature_table.' + today_str + '.' + combo_type + '.best.csv'
-    df = pd.read_csv(feature_file)
-
-    # Merge the probabilities into the feature table
-    prediction_dir = config['PATHS']['PREDICTION_DIR_PRED']
-    prob_file = prediction_dir + '/probabilities.' + today_str + '.' + combo_type + '.best.csv'
-    probabilities = pd.read_csv(prob_file)
-    df['p_cutoff'] = probabilities['p_cutoff']
-
-    # Convert fractions to percentages
-    df['p_cutoff'] *= 100
-    df['late_frac'] *= 100
-
-    # Drop duplicates
-    df.drop_duplicates('location_id', keep='first', inplace=True)
-
-    # Anonymize the addresses
-    tmp = df['meter_address'].copy()
-    tmp.iloc[0:-1:4] = '1234 N MAIN ST, ANYTOWN, USA'
-    tmp.iloc[1:-1:4] = '2345 N MAIN ST, ANYTOWN, USA'
-    tmp.iloc[2:-1:4] = '3456 N MAIN ST, ANYTOWN, USA'
-    tmp.iloc[3:-1:4] = '4567 N MAIN ST, ANYTOWN, USA'
-    df['meter_address'] = tmp
-
-    return df
-
-
-#returns top indicator div
-def indicator(id_text, id_value):
-    return html.Div(
-        [
-            html.P(
-#                text,
-                id = id_text,
-                className="twelve columns indicator_text"
-            ),
-            html.P(
-                id = id_value,
-                className="indicator_value"
-            ),
-        ],
-        className="four columns indicator",
-    )
-
-
-# returns map figure based on threshold and feature_name
-def scatter_map(feature_name, df):
-
-    data = [
-        go.Scattermapbox(
-            lat=df['lat'],
-            lon=df['lng'],
-            mode='markers',
-            marker=go.scattermapbox.Marker(
-                size=9,
-#                cmax=250,
-#                cmin=0,
-                color=df[feature_name].values.tolist(),
-                colorscale='Portland',
-                colorbar=dict(thickness=20),
-            ),
-            text=df['meter_address'],
-        )
-    ]
-
-    layout = go.Layout(
-        autosize=True,
-        hovermode='closest',
-        mapbox=go.layout.Mapbox(
-            accesstoken=mapbox_access_token,
-            bearing=0,
-            center=go.layout.mapbox.Center(
-                lat=lat_center,
-                lon=lon_center
-            ),
-            pitch=0,
-            zoom=9,
-        ),
-        margin=dict(l=10, r=10, t=0, b=0),
-    )
-
-    return dict(data=data, layout=layout)
-
-
-# returns pie chart that shows customer metadata
-def metadata_pie(feature_name, df):
-
-    n_custs = len(df.index)
-    categories = df[feature_name].unique().tolist()
-    values = []
-
-    # compute % for each category
-    for cat in categories:
-        n_cat = df[df[feature_name] == cat].shape[0]
-        values.append(n_cat / n_custs * 100)
-
-    trace = go.Pie(
-        labels=categories,
-        values=values,
-        marker={"colors": ["#264e86", "#0074e4", "#74dbef", "#eff0f4"]},
-    )
-
-    layout = dict(margin=dict(l=15, r=10, t=0, b=65), legend=dict(orientation="h"))
-    return dict(data=[trace], layout=layout)
-
-
-# displays a table
-def generate_table(df, max_rows=1000):
-    return html.Table(
-        # Header
-        [html.Tr([html.Th(col) for col in df.columns])] +
-
-        # Body
-        [html.Tr([
-            html.Td(df.iloc[i][col]) for col in df.columns
-        ]) for i in range(min(len(df), max_rows))]
-    )
-
-
-# -------------------------------------------------------------------- #
-#
 # Run the dashboard
 #
 # -------------------------------------------------------------------- #
-def dashboard(config_file):
+def dashboard(config):
 
     # -------------------------------------------------------------------- #
     #
@@ -168,14 +34,151 @@ def dashboard(config_file):
 
     # -------------------------------------------------------------------- #
     #
+    # Define functions called by dashboard objects
+    #
+    # -------------------------------------------------------------------- #
+
+    # Fetch the dataset
+    def read_df(config):
+
+        today_str = config['PREDICTION']['REF_DAY']
+        combo_type = config['PREDICTION']['COMBO_TYPE']
+        mode = 'predict'
+
+        # Read the feature file
+        feature_dir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
+        feature_file = feature_dir + '/feature_table.' + \
+           '{:s}.{:s}.{:s}.best.csv'.format(mode, today_str, combo_type)
+        df = pd.read_csv(feature_file)
+
+        # Merge the probabilities into the feature table
+        prediction_dir = config['PATHS']['PREDICTIONS_DIR_PRED']
+        prob_file = prediction_dir + '/probabilities.' + \
+            '{:s}.{:s}.{:s}.best.csv'.format(mode, today_str, combo_type)
+        probabilities = pd.read_csv(prob_file)
+        df['p_cutoff'] = probabilities['p_cutoff']
+
+        # Convert fractions to percentages
+        df['p_cutoff'] *= 100
+        df['late_frac'] *= 100
+
+        # Drop duplicates
+        df.drop_duplicates('location_id', keep='first', inplace=True)
+
+        # Anonymize the addresses
+        tmp = df['meter_address'].copy()
+        tmp.iloc[0:-1:4] = '1234 N MAIN ST, ANYTOWN, USA'
+        tmp.iloc[1:-1:4] = '2345 N MAIN ST, ANYTOWN, USA'
+        tmp.iloc[2:-1:4] = '3456 N MAIN ST, ANYTOWN, USA'
+        tmp.iloc[3:-1:4] = '4567 N MAIN ST, ANYTOWN, USA'
+        df['meter_address'] = tmp
+
+        return df
+
+
+    #returns top indicator div
+    def indicator(id_text, id_value):
+        return html.Div(
+            [
+                html.P(
+#                    text,
+                    id = id_text,
+                    className="twelve columns indicator_text"
+                ),
+                html.P(
+                    id = id_value,
+                    className="indicator_value"
+                ),
+            ],
+            className="four columns indicator",
+        )
+
+
+    # returns map figure based on threshold and feature_name
+    def scatter_map(feature_name, df):
+
+        data = [
+            go.Scattermapbox(
+                lat=df['lat'],
+                lon=df['lng'],
+                mode='markers',
+                marker=go.scattermapbox.Marker(
+                    size=9,
+#                    cmax=250,
+#                    cmin=0,
+                    color=df[feature_name].values.tolist(),
+                    colorscale='Portland',
+                    colorbar=dict(thickness=20),
+                ),
+                text=df['meter_address'],
+            )
+        ]
+
+        layout = go.Layout(
+            autosize=True,
+            hovermode='closest',
+            mapbox=go.layout.Mapbox(
+                accesstoken=mapbox_access_token,
+                bearing=0,
+                center=go.layout.mapbox.Center(
+                    lat=lat_center,
+                    lon=lon_center
+                ),
+                pitch=0,
+                zoom=9,
+            ),
+            margin=dict(l=10, r=10, t=0, b=0),
+        )
+
+        return dict(data=data, layout=layout)
+
+
+    # returns pie chart that shows customer metadata
+    def metadata_pie(feature_name, df):
+
+        n_custs = len(df.index)
+        categories = df[feature_name].unique().tolist()
+        values = []
+
+        # compute % for each category
+        for cat in categories:
+            n_cat = df[df[feature_name] == cat].shape[0]
+            values.append(n_cat / n_custs * 100)
+
+        trace = go.Pie(
+            labels=categories,
+            values=values,
+            marker={"colors": ["#264e86", "#0074e4", "#74dbef", "#eff0f4"]},
+        )
+
+        layout = dict(margin=dict(l=15, r=10, t=0, b=65),
+                      legend=dict(orientation="h"))
+        return dict(data=[trace], layout=layout)
+
+
+    # displays a table
+    def generate_table(df, max_rows=1000):
+        return html.Table(
+            # Header
+            [html.Tr([html.Th(col) for col in df.columns])] +
+
+            # Body
+            [html.Tr([
+                html.Td(df.iloc[i][col]) for col in df.columns
+            ]) for i in range(min(len(df), max_rows))]
+        )
+
+
+    # -------------------------------------------------------------------- #
+    #
     # Global definitions
     #
     # -------------------------------------------------------------------- #
-    # Read config_file
-    if isinstance(config_file, dict):
-        config = config_file
-    else:
-        config = read_config(config_file)
+#    # Read config_file
+#    if isinstance(config_file, dict):
+#        config = config_file
+#    else:
+#        config = read_config(config_file)
     # Use config file to set up definitions
     mapbox_access_token = config['MAPPING']['MAPBOX_ACCESS_TOKEN']
     lat_center = config['MAPPING']['MAP_CENTER_LAT']
@@ -232,9 +235,14 @@ def dashboard(config_file):
                     html.Span("CutoffPredictor", className='app-title'),
                     html.Div(
                         children=[
-                            html.Img(src='file://' + config['PATHS']['IMAGES_DIR'] + '/InsightLogo.png',height="100%"),
-                            html.Img(src='file://' + config['PATHS']['IMAGES_DIR'] + '/ValorWaterLogo.png',height="100%"),
-                            html.Img(src='https://s3-us-west-1.amazonaws.com/plotly-tutorials/logo/new-branding/dash-logo-by-plotly-stripe-inverted.png',height="100%"),
+                            html.Img(src='file://' + \
+                                config['PATHS']['IMAGES_DIR'] + \
+                                '/InsightLogo.png',height="100%"),
+                            html.Img(src='file://' + \
+                                config['PATHS']['IMAGES_DIR'] + \
+                                '/ValorWaterLogo.png',height="100%"),
+                            html.Img(src='https://s3-us-west-1.amazonaws.com/plotly-tutorials/logo/new-branding/dash-logo-by-plotly-stripe-inverted.png',
+                                     height="100%"),
                         ],
                         style={"float":"right","height":"100%"},
                     ),
@@ -251,7 +259,8 @@ def dashboard(config_file):
             html.Div(
                 [
                     html.Div(html.P(
-                                 'Thresh. {}:'.format(feature_longname[p_cut_col]),
+                                 'Thresh. {}:' \
+                                     .format(feature_longname[p_cut_col]),
                                  style={"textAlign": "right"},
                                  ),
                              className="two columns"),
@@ -267,9 +276,12 @@ def dashboard(config_file):
                         dcc.Dropdown(
                             id="history_dropdown",
                             options=[
-                                {"label": "Mean Monthly Charges ($)", "value": "mean_charge_tot"},
-                                {"label": "Mean Late Charges ($)", "value": "mean_charge_late"},
-                                {"label": "Mean Volume Used (kGal)", "value": "mean_vol"},
+                                {"label": "Mean Monthly Charges ($)",
+                                 "value": "mean_charge_tot"},
+                                {"label": "Mean Late Charges ($)",
+                                 "value": "mean_charge_late"},
+                                {"label": "Mean Volume Used (kGal)",
+                                 "value": "mean_vol"},
                                 {"label": "Prior Cutoffs", "value": "nCutPrior"},
                             ],
                             value="mean_charge_tot",
@@ -281,8 +293,10 @@ def dashboard(config_file):
                         dcc.Dropdown(
                             id="metadata_dropdown",
                             options=[
-                                {"label": "Customer Type", "value": "cust_type"},
-                                {"label": "Municipality", "value": "municipality"},
+                                {"label": "Customer Type",
+                                 "value": "cust_type"},
+                                {"label": "Municipality",
+                                 "value": "municipality"},
                                 {"label": "Meter Size", "value": "meter_size"},
                             ],
                             value="cust_type",
@@ -395,146 +409,146 @@ def dashboard(config_file):
     # when changes are made to the files
     app.run_server(debug=True)
 
+    # -------------------------------------------------------------------- #
+    #
+    # Define the callbacks
+    #
+    # -------------------------------------------------------------------- #
+
+    ## updates title of thresh slider based on value
+    #@app.callback(
+    #    Output("thresh_slider_output_container", "children"),
+    #    [Input("thresh_slider", "value")]
+    #)
+    #def thresh_slider_callback(thresh):
+    #    return 'Cutoff Probability: {:.1f}%'.format(thresh)
+
+    # updates left indicator based on df updates
+    @app.callback(
+        [Output("left_indicator_title", "children"),
+         Output("left_indicator", "children")],
+        [Input("thresh_input", "value"), Input("current_df", "children")]
+    )
+    def left_indicator_callback(thresh, df):
+        df = pd.read_json(df, orient="split")
+        n_cutoffs = len(df.loc[df[p_cut_col] >= float(thresh)])
+        return feature_total_str[p_cut_col], n_cutoffs
+
+    # updates middle indicator based on df updates
+    @app.callback(
+        [Output("middle_indicator_title", "children"),
+         Output("middle_indicator", "children")],
+        [Input("thresh_input", "value"), Input("history_dropdown", "value"),
+         Input("current_df", "children")]
+    )
+    def middle_indicator_callback(thresh, feature_name, df):
+        df = pd.read_json(df, orient="split")
+        df = df.loc[df[p_cut_col] >= float(thresh)]
+        total = ( (df[feature_name] * df[p_cut_col] / 100).sum() *
+                  factor_total[feature_name] )
+        return feature_total_str[feature_name], '{:.1f}'.format(total)
+
+    # updates right indicator based on df updates
+    @app.callback(
+        [Output("right_indicator_title", "children"),
+         Output("right_indicator", "children")],
+        [Input("thresh_input", "value"), Input("history_dropdown", "value"),
+         Input("current_df", "children")]
+    )
+    def right_indicator_callback(thresh, feature_name, df):
+        df = pd.read_json(df, orient="split")
+        df = df.loc[df[p_cut_col] >= float(thresh)]
+        total = ( (df[feature_name] * df[p_cut_col] / 100).sum() *
+                  factor_total[feature_name] )
+        n_cutoffs = len(df[p_cut_col])
+        if n_cutoffs > 0:
+            mean = total / n_cutoffs
+            mean_str = '{:.1f}'.format(mean)
+        else:
+            mean_str = 'n/a'
+        title_str = feature_mean_str[feature_name] + ' Per Cutoff'
+        return title_str, mean_str
+
+    # update cutoff map figure based on dropdown's value and df updates
+    @app.callback(
+        Output("map_cutoff", "figure"),
+        [Input("thresh_input", "value"), Input("current_df", "children")],
+    )
+    def map_cutoff_callback(thresh, df):
+        df = pd.read_json(df, orient="split")
+        df = df.loc[df[p_cut_col] >= float(thresh)]
+        return scatter_map(p_cut_col, df)
+
+    # update history map title based on dropdown's value
+    @app.callback(
+        Output("map_history_title", "children"),
+        [Input("history_dropdown", "value")],
+    )
+    def map_history_title_callback(feature_name):
+        return feature_longname[feature_name]
+
+    # update history map figure based on dropdown's value and df updates
+    @app.callback(
+        Output("map_history", "figure"),
+        [Input("thresh_input", "value"), Input("history_dropdown", "value"),
+         Input("current_df", "children")],
+    )
+    def map_history_callback(thresh, feature_name, df):
+        df = pd.read_json(df, orient="split")
+        df = df.loc[df[p_cut_col] >= float(thresh)]
+        return scatter_map(feature_name, df)
+
+    # update pie chart title based on dropdown's value
+    @app.callback(
+        Output("chart_metadata_title", "children"),
+        [Input("metadata_dropdown", "value")],
+    )
+    def chart_metadata_title_callback(feature_name):
+        return feature_longname[feature_name]
+
+    # update pie chart figure based on dropdown's value and df updates
+    @app.callback(
+        Output("chart_metadata", "figure"),
+        [Input("thresh_input", "value"), Input("metadata_dropdown", "value"),
+         Input("current_df", "children")],
+    )
+    def chart_metadata_callback(thresh, feature_name, df):
+        df = pd.read_json(df, orient="split")
+        df = df.loc[df[p_cut_col] >= float(thresh)]
+        return metadata_pie(feature_name, df)
+
+    # update table based on dropdown's value and df updates
+    @app.callback(
+        Output("cust_table", "children"),
+        [Input("thresh_input", "value"), Input("current_df", "children")],
+    )
+    def cust_table_callback(thresh, df):
+        df = pd.read_json(df, orient="split")
+        df = df.loc[df[p_cut_col] >= float(thresh)]
+        column_list = ["meter_address", "p_cutoff",
+                       "mean_charge_tot", "mean_charge_late",
+                       "mean_vol", "late_frac", "nCutPrior"]
+        column_longnames = [feature_longname[col] for col in column_list]
+        df = df.round({
+                       'mean_charge_tot': 2,
+                       'mean_charge_late': 2,
+                       'mean_vol': 2})
+        df_new = pd.DataFrame(df[column_list].values, columns=column_longnames)
+        return generate_table(df_new)
+
+    ## re-read dataframe and convert to json
+    #@app.callback(
+    #    Output("current_df", "children"),
+    #    [Input("refresh_button", "n_clicks")],
+    #    [State("current_df", "children")],
+    #)
+    #def refresh_callback(n_clicks, current_df):
+    #    if n_clicks > 0:
+    #        df = read_df()
+    #        return df.to_json(orient="split")
+    #    return current_df
+
     return 0
 
-
-# -------------------------------------------------------------------- #
-#
-# Define the callbacks
-#
-# -------------------------------------------------------------------- #
-
-## updates title of thresh slider based on value
-#@app.callback(
-#    Output("thresh_slider_output_container", "children"),
-#    [Input("thresh_slider", "value")]
-#)
-#def thresh_slider_callback(thresh):
-#    return 'Cutoff Probability: {:.1f}%'.format(thresh)
-
-# updates left indicator based on df updates
-@app.callback(
-    [Output("left_indicator_title", "children"),
-     Output("left_indicator", "children")],
-    [Input("thresh_input", "value"), Input("current_df", "children")]
-)
-def left_indicator_callback(thresh, df):
-    df = pd.read_json(df, orient="split")
-    n_cutoffs = len(df.loc[df[p_cut_col] >= float(thresh)])
-    return feature_total_str[p_cut_col], n_cutoffs
-
-# updates middle indicator based on df updates
-@app.callback(
-    [Output("middle_indicator_title", "children"),
-     Output("middle_indicator", "children")],
-    [Input("thresh_input", "value"), Input("history_dropdown", "value"),
-     Input("current_df", "children")]
-)
-def middle_indicator_callback(thresh, feature_name, df):
-    df = pd.read_json(df, orient="split")
-    df = df.loc[df[p_cut_col] >= float(thresh)]
-    total = ( (df[feature_name] * df[p_cut_col] / 100).sum() *
-              factor_total[feature_name] )
-    return feature_total_str[feature_name], '{:.1f}'.format(total)
-
-# updates right indicator based on df updates
-@app.callback(
-    [Output("right_indicator_title", "children"),
-     Output("right_indicator", "children")],
-    [Input("thresh_input", "value"), Input("history_dropdown", "value"),
-     Input("current_df", "children")]
-)
-def right_indicator_callback(thresh, feature_name, df):
-    df = pd.read_json(df, orient="split")
-    df = df.loc[df[p_cut_col] >= float(thresh)]
-    total = ( (df[feature_name] * df[p_cut_col] / 100).sum() *
-              factor_total[feature_name] )
-    n_cutoffs = len(df[p_cut_col])
-    if n_cutoffs > 0:
-        mean = total / n_cutoffs
-        mean_str = '{:.1f}'.format(mean)
-    else:
-        mean_str = 'n/a'
-    title_str = feature_mean_str[feature_name] + ' Per Cutoff'
-    return title_str, mean_str
-
-# update cutoff map figure based on dropdown's value and df updates
-@app.callback(
-    Output("map_cutoff", "figure"),
-    [Input("thresh_input", "value"), Input("current_df", "children")],
-)
-def map_cutoff_callback(thresh, df):
-    df = pd.read_json(df, orient="split")
-    df = df.loc[df[p_cut_col] >= float(thresh)]
-    return scatter_map(p_cut_col, df)
-
-# update history map title based on dropdown's value
-@app.callback(
-    Output("map_history_title", "children"),
-    [Input("history_dropdown", "value")],
-)
-def map_history_title_callback(feature_name):
-    return feature_longname[feature_name]
-
-# update history map figure based on dropdown's value and df updates
-@app.callback(
-    Output("map_history", "figure"),
-    [Input("thresh_input", "value"), Input("history_dropdown", "value"),
-     Input("current_df", "children")],
-)
-def map_history_callback(thresh, feature_name, df):
-    df = pd.read_json(df, orient="split")
-    df = df.loc[df[p_cut_col] >= float(thresh)]
-    return scatter_map(feature_name, df)
-
-# update pie chart title based on dropdown's value
-@app.callback(
-    Output("chart_metadata_title", "children"),
-    [Input("metadata_dropdown", "value")],
-)
-def chart_metadata_title_callback(feature_name):
-    return feature_longname[feature_name]
-
-# update pie chart figure based on dropdown's value and df updates
-@app.callback(
-    Output("chart_metadata", "figure"),
-    [Input("thresh_input", "value"), Input("metadata_dropdown", "value"),
-     Input("current_df", "children")],
-)
-def chart_metadata_callback(thresh, feature_name, df):
-    df = pd.read_json(df, orient="split")
-    df = df.loc[df[p_cut_col] >= float(thresh)]
-    return metadata_pie(feature_name, df)
-
-# update table based on dropdown's value and df updates
-@app.callback(
-    Output("cust_table", "children"),
-    [Input("thresh_input", "value"), Input("current_df", "children")],
-)
-def cust_table_callback(thresh, df):
-    df = pd.read_json(df, orient="split")
-    df = df.loc[df[p_cut_col] >= float(thresh)]
-    column_list = ["meter_address", "p_cutoff",
-                   "mean_charge_tot", "mean_charge_late",
-                   "mean_vol", "late_frac", "nCutPrior"]
-    column_longnames = [feature_longname[col] for col in column_list]
-    df = df.round({
-                   'mean_charge_tot': 2,
-                   'mean_charge_late': 2,
-                   'mean_vol': 2})
-    df_new = pd.DataFrame(df[column_list].values, columns=column_longnames)
-    return generate_table(df_new)
-
-## re-read dataframe and convert to json
-#@app.callback(
-#    Output("current_df", "children"),
-#    [Input("refresh_button", "n_clicks")],
-#    [State("current_df", "children")],
-#)
-#def refresh_callback(n_clicks, current_df):
-#    if n_clicks > 0:
-#        df = read_df()
-#        return df.to_json(orient="split")
-#    return current_df
 
 

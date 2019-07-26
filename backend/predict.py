@@ -75,6 +75,7 @@ def make_prediction(config, df_meter, df_location, df_occupant, df_volume,
     feature_dir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
     outfile = feature_dir + '/feature_table.{:s}.{:s}.{:s}.best.csv' \
         .format(mode, today_str, combo_type)
+    feature_table.to_csv(outfile)
  
     # Save prediction
     prediction_dir = config['PATHS']['PREDICTIONS_DIR_PRED']
