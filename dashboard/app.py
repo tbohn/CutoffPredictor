@@ -15,6 +15,141 @@ import math
 
 # -------------------------------------------------------------------- #
 #
+# Define functions called by dashboard objects
+#
+# -------------------------------------------------------------------- #
+
+# Fetch the dataset
+def read_df(config):
+
+    today_str = config['PREDICTION']['REF_DAY']
+    combo_type = config['PREDICTION']['COMBO_TYPE']
+    mode = 'predict'
+
+    # Read the feature file
+    feature_dir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
+    feature_file = feature_dir + '/feature_table.' + \
+       '{:s}.{:s}.{:s}.best.csv'.format(mode, today_str, combo_type)
+    df = pd.read_csv(feature_file)
+
+    # Merge the probabilities into the feature table
+    prediction_dir = config['PATHS']['PREDICTIONS_DIR_PRED']
+    prob_file = prediction_dir + '/probabilities.' + \
+        '{:s}.{:s}.{:s}.best.csv'.format(mode, today_str, combo_type)
+    probabilities = pd.read_csv(prob_file)
+    df['p_cutoff'] = probabilities['p_cutoff']
+
+    # Convert fractions to percentages
+    df['p_cutoff'] *= 100
+    df['late_frac'] *= 100
+
+    # Drop duplicates
+    df.drop_duplicates('location_id', keep='first', inplace=True)
+
+    # Anonymize the addresses
+    tmp = df['meter_address'].copy()
+    tmp.iloc[0:-1:4] = '1234 N MAIN ST, ANYTOWN, USA'
+    tmp.iloc[1:-1:4] = '2345 N MAIN ST, ANYTOWN, USA'
+    tmp.iloc[2:-1:4] = '3456 N MAIN ST, ANYTOWN, USA'
+    tmp.iloc[3:-1:4] = '4567 N MAIN ST, ANYTOWN, USA'
+    df['meter_address'] = tmp
+
+    return df
+
+
+#returns top indicator div
+def indicator(id_text, id_value):
+    return html.Div(
+        [
+            html.P(
+                id = id_text,
+                className="twelve columns indicator_text"
+            ),
+            html.P(
+                id = id_value,
+                className="indicator_value"
+            ),
+        ],
+        className="four columns indicator",
+    )
+
+
+# returns map figure based on threshold and feature_name
+def scatter_map(feature_name, df, mapbox_access_token, lat_center, lon_center):
+
+    data = [
+        go.Scattermapbox(
+            lat=df['lat'],
+            lon=df['lng'],
+            mode='markers',
+            marker=go.scattermapbox.Marker(
+                size=9,
+#                cmax=250,
+#                cmin=0,
+                color=df[feature_name].values.tolist(),
+                colorscale='Portland',
+                colorbar=dict(thickness=20),
+            ),
+            text=df['meter_address'],
+        )
+    ]
+
+    layout = go.Layout(
+        autosize=True,
+        hovermode='closest',
+        mapbox=go.layout.Mapbox(
+            accesstoken=mapbox_access_token,
+            bearing=0,
+            center=go.layout.mapbox.Center(
+                lat=lat_center,
+                lon=lon_center
+            ),
+            pitch=0,
+            zoom=9,
+        ),
+        margin=dict(l=10, r=10, t=0, b=0),
+    )
+
+    return dict(data=data, layout=layout)
+
+
+# returns pie chart that shows customer metadata
+def metadata_pie(feature_name, df):
+
+    n_custs = len(df.index)
+    categories = df[feature_name].unique().tolist()
+    values = []
+
+    # compute % for each category
+    for cat in categories:
+        n_cat = df[df[feature_name] == cat].shape[0]
+        values.append(n_cat / n_custs * 100)
+
+    trace = go.Pie(
+        labels=categories,
+        values=values,
+        marker={"colors": ["#264e86", "#0074e4", "#74dbef", "#eff0f4"]},
+    )
+
+    layout = dict(margin=dict(l=15, r=10, t=0, b=65),
+                  legend=dict(orientation="h"))
+    return dict(data=[trace], layout=layout)
+
+
+# displays a table
+def generate_table(df, max_rows=1000):
+    return html.Table(
+        # Header
+        [html.Tr([html.Th(col) for col in df.columns])] +
+
+        # Body
+        [html.Tr([
+            html.Td(df.iloc[i][col]) for col in df.columns
+        ]) for i in range(min(len(df), max_rows))]
+    )
+
+# -------------------------------------------------------------------- #
+#
 # Run the dashboard
 #
 # -------------------------------------------------------------------- #
@@ -31,142 +166,6 @@ def dashboard(config):
 
 #    external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 #    app.css.append_css({'external_url': external_stylesheets})
-
-    # -------------------------------------------------------------------- #
-    #
-    # Define functions called by dashboard objects
-    #
-    # -------------------------------------------------------------------- #
-
-    # Fetch the dataset
-    def read_df(config):
-
-        today_str = config['PREDICTION']['REF_DAY']
-        combo_type = config['PREDICTION']['COMBO_TYPE']
-        mode = 'predict'
-
-        # Read the feature file
-        feature_dir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
-        feature_file = feature_dir + '/feature_table.' + \
-           '{:s}.{:s}.{:s}.best.csv'.format(mode, today_str, combo_type)
-        df = pd.read_csv(feature_file)
-
-        # Merge the probabilities into the feature table
-        prediction_dir = config['PATHS']['PREDICTIONS_DIR_PRED']
-        prob_file = prediction_dir + '/probabilities.' + \
-            '{:s}.{:s}.{:s}.best.csv'.format(mode, today_str, combo_type)
-        probabilities = pd.read_csv(prob_file)
-        df['p_cutoff'] = probabilities['p_cutoff']
-
-        # Convert fractions to percentages
-        df['p_cutoff'] *= 100
-        df['late_frac'] *= 100
-
-        # Drop duplicates
-        df.drop_duplicates('location_id', keep='first', inplace=True)
-
-        # Anonymize the addresses
-        tmp = df['meter_address'].copy()
-        tmp.iloc[0:-1:4] = '1234 N MAIN ST, ANYTOWN, USA'
-        tmp.iloc[1:-1:4] = '2345 N MAIN ST, ANYTOWN, USA'
-        tmp.iloc[2:-1:4] = '3456 N MAIN ST, ANYTOWN, USA'
-        tmp.iloc[3:-1:4] = '4567 N MAIN ST, ANYTOWN, USA'
-        df['meter_address'] = tmp
-
-        return df
-
-
-    #returns top indicator div
-    def indicator(id_text, id_value):
-        return html.Div(
-            [
-                html.P(
-#                    text,
-                    id = id_text,
-                    className="twelve columns indicator_text"
-                ),
-                html.P(
-                    id = id_value,
-                    className="indicator_value"
-                ),
-            ],
-            className="four columns indicator",
-        )
-
-
-    # returns map figure based on threshold and feature_name
-    def scatter_map(feature_name, df):
-
-        data = [
-            go.Scattermapbox(
-                lat=df['lat'],
-                lon=df['lng'],
-                mode='markers',
-                marker=go.scattermapbox.Marker(
-                    size=9,
-#                    cmax=250,
-#                    cmin=0,
-                    color=df[feature_name].values.tolist(),
-                    colorscale='Portland',
-                    colorbar=dict(thickness=20),
-                ),
-                text=df['meter_address'],
-            )
-        ]
-
-        layout = go.Layout(
-            autosize=True,
-            hovermode='closest',
-            mapbox=go.layout.Mapbox(
-                accesstoken=mapbox_access_token,
-                bearing=0,
-                center=go.layout.mapbox.Center(
-                    lat=lat_center,
-                    lon=lon_center
-                ),
-                pitch=0,
-                zoom=9,
-            ),
-            margin=dict(l=10, r=10, t=0, b=0),
-        )
-
-        return dict(data=data, layout=layout)
-
-
-    # returns pie chart that shows customer metadata
-    def metadata_pie(feature_name, df):
-
-        n_custs = len(df.index)
-        categories = df[feature_name].unique().tolist()
-        values = []
-
-        # compute % for each category
-        for cat in categories:
-            n_cat = df[df[feature_name] == cat].shape[0]
-            values.append(n_cat / n_custs * 100)
-
-        trace = go.Pie(
-            labels=categories,
-            values=values,
-            marker={"colors": ["#264e86", "#0074e4", "#74dbef", "#eff0f4"]},
-        )
-
-        layout = dict(margin=dict(l=15, r=10, t=0, b=65),
-                      legend=dict(orientation="h"))
-        return dict(data=[trace], layout=layout)
-
-
-    # displays a table
-    def generate_table(df, max_rows=1000):
-        return html.Table(
-            # Header
-            [html.Tr([html.Th(col) for col in df.columns])] +
-
-            # Body
-            [html.Tr([
-                html.Td(df.iloc[i][col]) for col in df.columns
-            ]) for i in range(min(len(df), max_rows))]
-        )
 
 
     # -------------------------------------------------------------------- #
@@ -282,7 +281,8 @@ def dashboard(config):
                                  "value": "mean_charge_late"},
                                 {"label": "Mean Volume Used (kGal)",
                                  "value": "mean_vol"},
-                                {"label": "Prior Cutoffs", "value": "nCutPrior"},
+                                {"label": "Prior Cutoffs",
+                                 "value": "nCutPrior"},
                             ],
                             value="mean_charge_tot",
                             clearable=False,
@@ -297,7 +297,8 @@ def dashboard(config):
                                  "value": "cust_type"},
                                 {"label": "Municipality",
                                  "value": "municipality"},
-                                {"label": "Meter Size", "value": "meter_size"},
+                                {"label": "Meter Size",
+                                 "value": "meter_size"},
                             ],
                             value="cust_type",
                             clearable=False,
@@ -402,15 +403,6 @@ def dashboard(config):
 
     # -------------------------------------------------------------------- #
     #
-    # Start the dashboard
-    #
-    # -------------------------------------------------------------------- #
-    # setting debug=True enables instant refreshing of the page
-    # when changes are made to the files
-    app.run_server(debug=True)
-
-    # -------------------------------------------------------------------- #
-    #
     # Define the callbacks
     #
     # -------------------------------------------------------------------- #
@@ -477,7 +469,8 @@ def dashboard(config):
     def map_cutoff_callback(thresh, df):
         df = pd.read_json(df, orient="split")
         df = df.loc[df[p_cut_col] >= float(thresh)]
-        return scatter_map(p_cut_col, df)
+        return scatter_map(p_cut_col, df, mapbox_access_token, lat_center,
+                           lon_center)
 
     # update history map title based on dropdown's value
     @app.callback(
@@ -496,7 +489,8 @@ def dashboard(config):
     def map_history_callback(thresh, feature_name, df):
         df = pd.read_json(df, orient="split")
         df = df.loc[df[p_cut_col] >= float(thresh)]
-        return scatter_map(feature_name, df)
+        return scatter_map(feature_name, df, mapbox_access_token, lat_center,
+                           lon_center)
 
     # update pie chart title based on dropdown's value
     @app.callback(
@@ -547,6 +541,15 @@ def dashboard(config):
     #        df = read_df()
     #        return df.to_json(orient="split")
     #    return current_df
+
+    # -------------------------------------------------------------------- #
+    #
+    # Start the dashboard
+    #
+    # -------------------------------------------------------------------- #
+    # setting debug=True enables instant refreshing of the page
+    # when changes are made to the files
+    app.run_server(debug=True)
 
     return 0
 
