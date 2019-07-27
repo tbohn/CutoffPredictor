@@ -137,15 +137,15 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
         except:
             location_id = -1
         try:
-            lat = df_location.loc[df_location['location_id'] == location_id,
-                                  'lat'].values[0]
+            latitude = df_location.loc[df_location['location_id'] == \
+                location_id, 'latitude'].values[0]
         except:
-            lat = 0.0
+            latitude = 0.0
         try:
-            lng = df_location.loc[df_location['location_id'] == location_id,
-                                  'lng'].values[0]
+            longitude = df_location.loc[df_location['location_id'] == \
+                location_id, 'longitude'].values[0]
         except:
-            lng = 0.0
+            longitude = 0.0
         try:
             meter_address = df_location.loc[df_location['location_id'] == \
                 location_id, 'meter_address'].values[0]
@@ -400,8 +400,8 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
             df = pd.DataFrame(
                 data={'occupant_id': occ,
                       'location_id': location_id,
-                      'lat': lat,
-                      'lng': lng,
+                      'latitude': latitude,
+                      'longitude': longitude,
                       'meter_address': meter_address,
                       'municipality': municipality,
                       'cust_type': cust_type,

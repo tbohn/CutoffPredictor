@@ -79,8 +79,8 @@ def scatter_map(feature_name, df, mapbox_access_token, lat_center, lon_center):
 
     data = [
         go.Scattermapbox(
-            lat=df['lat'],
-            lon=df['lng'],
+            lat=df['latitude'],
+            lon=df['longitude'],
             mode='markers',
             marker=go.scattermapbox.Marker(
                 size=9,
