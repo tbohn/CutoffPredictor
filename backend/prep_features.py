@@ -7,32 +7,6 @@ import math
 from . import prep_data as prda
 
 
-# Apply exponentially-decaying weights to x (backwards from end of array)
-def exp_decay_wts(x, tau):
-    N = len(x)
-    w = np.empty([N])
-    w[:] = [math.exp(-t/tau) for t in range(N-1,-1,-1)]
-    return x * w, w
-
-
-# Linear Regression
-def linreg(X, Y):
-    """
-    return a,b in solution to y = ax + b such that root mean square
-    distance between trend line and original points is minimized
-    """
-    N = len(X)
-    Sx = Sy = Sxx = Syy = Sxy = 0.0
-    for x, y in zip(X, Y):
-        Sx = Sx + x
-        Sy = Sy + y
-        Sxx = Sxx + x*x
-        Syy = Syy + y*y
-        Sxy = Sxy + x*y
-    det = Sxx * N - Sx * Sx
-    return (Sxy * N - Sy * Sx)/det, (Sxx * Sy - Sx * Sxy)/det
-
-
 # Z-transform of timeseries
 def ztrans(x):
     
@@ -47,22 +21,32 @@ def ztrans(x):
     return ztrans
 
 
-# Z-transform of a point relative to the distribution of all points behind it
-def ztrans_expanding_window(x, t0, t1):
+# Z-transform of timeseries, separately for each of 12 months
+def ztrans_bymon(x, default=0.0):
     
-    maxlen = t1 - t0
-    ztrans_expanding = np.zeros([maxlen], dtype=np.float)
-    
-    for t in range(2, maxlen):
-        mean = np.nanmean(x[t0:t0+t])
-        std = np.nanstd(x[t0:t0+t])
-        if std > 0:
-            ztrans_expanding[t] = (x[t0+t] - mean) / std
+    N = len(x)
+    ztrans = np.full([N], default, dtype=np.float)
+    if N > 24:
+        if N % 12 > 0:
+            ntmp = (int(N / 12) + 1) * 12
+        else:
+            ntmp = N
+    nYears = int(ntmp / 12)
+    tmp = np.empty([ntmp])
+    tmp[:N] = x.values
+    mmean = np.nanmean(tmp.reshape(nYears, 12))
+    mstd = np.nanstp(tmp.reshape(nYears, 12))
+    anom = (tmp.reshape(nYears, 12) - mmean) / mstd
+    anom[np.isnan(anom)] = default
+    anom[np.isinf(anom)] = default
+    ztrans = anom.reshape(nYears * 12)[:N]
 
-    return ztrans_expanding
+    return ztrans
 
 
-def clip_time_series_by_cutoffs(df, date_colname, date_first, date_last, cutoff_dates):
+def clip_time_series_by_cutoffs(df, date_colname, date_first, date_last,
+                                cutoff_dates):
+
     nCut = len(cutoff_dates)
     df_list = []
     lengths = []
@@ -72,47 +56,26 @@ def clip_time_series_by_cutoffs(df, date_colname, date_first, date_last, cutoff_
     for c in range(nCut):
         if cutoff_dates[c] > date_first and cutoff_dates[c] <= date_last:
             date1 = cutoff_dates[c]
-            if date1 > date0:
-                df_tmp = df.loc[df[date_colname].between(date0, date1)]
-            else:
-                df_tmp = df.loc[df[date_colname].isna()]
-            date0 = date1
+            df_tmp = df.loc[df[date_colname].between(date0, date1)]
+            date0 = date1 + pd.DateOffset(months=1)
         else:
             df_tmp = df.loc[df[date_colname].isna()]
         df_list.append(df_tmp)
         lengths.append(len(df_tmp))
+
     return df_list, lengths
-
-
-def select_segment(df_lens, N):
-    nplengths = np.asarray(df_lens)
-    long_idxs = np.asarray(np.where(nplengths >= N))
-    long_lengths = nplengths[long_idxs]
-    # If at least one segment is long enough to contain a complete sample
-    # window, choose the most recent one
-    if long_idxs.shape[-1] > 0:
-        if long_idxs.ndim == 2:
-            i = np.asscalar(long_idxs[0,-1])
-        else:
-            i = np.asscalar(long_idxs[-1])
-    # Otherwise, choose the longest segment
-    elif len(nplengths) > 0:
-        i = np.argmax(nplengths)
-    else:
-        i = None
-    return i
 
 
 # Create table of predictors and predictands
 def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                          df_charge, df_volume, today, mode='train',
-                         N_sample=6):
+                         nSamples=6):
 
     occlist = df_occupant['occupant_id'].unique()
     i = 0
-    icut = 0
-    inocut = 0
     k = 0
+    kcut = 0
+    knocut = 0
 
     for occ in occlist:
 
@@ -155,7 +118,7 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
             municipality = df_location.loc[df_location['location_id'] == \
                 location_id, 'municipality'].values[0]
         except:
-            municipality = '-1'
+            municipality = -1
         try:
             meter_id = df_meter.loc[df_meter['location_id'] == location_id,
                                     'meter_id'].values[0]
@@ -214,51 +177,43 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
             dfv['vol_log'] = dfv['vol_log'].apply(math.log)
             nVolume = len(dfv)
             for col in ['volume_kgals','vol_log']:
+                # Anomalies without accounting for seasonal cycle
                 col_anom = col + '_anom'
-                if nVolume > 24:
-                    if nVolume % 12 > 0:
-                        ntmp = (int(nVolume / 12) + 1) * 12
-                    else:
-                        ntmp = nVolume
-                    nYears = int(ntmp / 12)
-                    tmp = np.empty([ntmp])
-                    tmp[:nVolume] = dfv[col].values
-                    mmean = np.nanmean(tmp.reshape(nYears,12))
-                    mstd = np.nanstd(tmp.reshape(nYears,12))
-                    anom = (tmp.reshape(nYears,12) - mmean) / mstd
-                    anom[np.isnan(anom)] = 0
-                    anom[np.isinf(anom)] = 0
-                    dfv[col_anom] = anom.reshape(nYears*12)[:nVolume]
-                elif nVolume >= 3:
-                    mean = np.nanmean(dfv[col])
-                    std = np.nanstd(dfv[col])
-                    if std > 0:
-                        dfv[col_anom] = (dfv[col] - mean) / std
-                    else:
-                        dfv[col_anom] = dfv[col] - mean
-                    dfv.loc[dfv[col_anom].isna()] = 0
-                else:
-                    dfv[col_anom] = np.nan
+                dfv[col_anom] = ztrans(dfv[col])
+                # Anomalies relative to seasonal cycle
+                col_manom = col + '_manom'
+                dfv[col_manom] = ztrans_bymon(dfv[col])
         else:
             inVolume = False
             nVolume = 0
 
         # Clip sample windows out of time series
+
+        # segments = divide time series into "independent" portions between
+        # cutoffs (if no cutoff, entire time series is a single segment)
+        # windows = divide each segment into consecutive windows, starting
+        # from end and moving backwards
+
+        # dfc_list and dfv_list are the charge and volume timeseries for each
+        # segment
         dfc_list = []
         dfv_list = []
+        # nWindows_list = number of windows in each segment
+        nWindows_list = []
+
+        # label_list, t0c_list, and t1c_list are the trinary labels and start
+        # times for each window in each segment
+        label_list = []
         t0c_list = []
-        t1c_list = []
         t0v_list = []
-        t1v_list = []
-        N_samples = 0
+
+        # Different numbers and positions of windows for 'train' and 'pred'
+        # periods
         if mode == 'train':
-            # For train cutoff time series, clip time series into segments
-            # in between cutoffs (if any) and select the most recent segment
-            # that can accomodate a sample window; window's end is immediately
-            # before the cutoff
+
+            # For training period cutoff time series, clip time series into
+            # segments between cutoffs (if any)
             if cutoff:
-                nCP_array = np.arange(nCut).astype(int)
-                CP_array = np.where(nCP_array > 0, 1, 0).astype(int)
                 dfc_list, dfc_lens = \
                     clip_time_series_by_cutoffs(dfc, 'billing_period_end',
                                                 bill_first, bill_last,
@@ -267,238 +222,315 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                     clip_time_series_by_cutoffs(dfv, 'meter_read_at',
                                                 read_first, read_last,
                                                 cutoff_dates)
-                for c in range(nCut):
-                    t0c_list.append(max(len(dfc_list[c]) - N_sample, 0))
-                    t1c_list.append(len(dfc_list[c]))
-                    t0v_list.append(max(len(dfv_list[c]) - N_sample, 0))
-                    t1v_list.append(len(dfv_list[c]))
-                N_samples = nCut
-            # For train nocut time series, clip out sample window
-            # from random location anywhere in history
+                nSegments = nCut
+                nCP_array = np.arange(nSegments).astype(int)
+            # For training period nocut time series, there is just 1 segment
             else:
                 dfc_list.append(dfc.copy())
-                t0c = np.asscalar(np.random.uniform(0, (nCharge - N_sample),
-                                                    1).astype(int))
-                t0c_list.append(t0c)
-                t1c_list.append(t0c + N_sample)
                 dfv_list.append(dfv.copy())
-                t0v = np.asscalar(np.random.uniform(0, (nVolume - N_sample),
-                                                    1).astype(int))
-                t0v_list.append(t0v)
-                t1v_list.append(t0v + N_sample)
-                nCP_array = np.arange(0,1).astype(int)
-                CP_array = np.where(nCP_array > 0, 1, 0).astype(int)
-                N_samples = 1
+                nSegments = 1
+                nCP_array = np.arange(0, 1).astype(int)
+            CP_array = np.where(nCP_array > 0, 1, 0).astype(int)
+
+            # Clip out consecutive sample windows from the end of the segment
+            # backwards as far as possible
+            for g in range(nSegments):
+                t0c_list_tmp = []
+                t0v_list_tmp = []
+                label_list_tmp = []
+                nWindows = 0
+                # Assign value of the trinary label for final window
+                # (which we start with)
+                if cutoff:
+                    # Final window before cutoff in a cutoff segment
+                    label_tri = 2
+                else:
+                    # Final window in a non-cutoff segment
+                    # (all windows get same label)
+                    label_tri = 0
+                t0c = len(dfc_list[g]) - nSamples
+                t0v = len(dfv_list[g]) - nSamples
+                while t0c >= 0 and t0v >= 0:
+                    t0c_list_tmp.append(t0c)
+                    t0v_list_tmp.append(t0v)
+                    label_list_tmp.append(label_tri)
+                    t0c -= nSamples
+                    t0v -= nSamples
+                    if cutoff == 1:
+                        # Prior windows in a cutoff segment
+                        label_tri = 1
+                    nWindows += 1
+                nWindows_list.append(nWindows)
+                t0c_list.append(t0c_list_tmp)
+                t0v_list.append(t0v_list_tmp)
+                label_list.append(label_list_tmp)
+
         # For predictions from current conditions, clip out sample window
-        # from N months prior to today
+        # from nSamples months prior to today
         else:
+
+            nSegments = 1
             dfc_list.append(dfc.copy())
-            t1c = nCharge
-            t1c_list.append(t1c)
-            t0c_list.append(max(t1c - N_sample, 0))
             dfv_list.append(dfv.copy())
-            t1v = nVolume
-            t1v_list.append(t1v)
-            t0v_list.append(max(t1v - N_sample, 0))
+            for g in range(nSegments):
+                t0c_list_tmp = []
+                t0v_list_tmp = []
+                label_list_tmp = []
+                nWindows = 0
+                label_tri = 0
+                t0c = len(dfc_list[g]) - nSamples
+                t0v = len(dfv_list[g]) - nSamples
+                while t0c >= 0 and t0v >= 0 and nWindows < 1:
+                    t0c_list_tmp.append(t0c)
+                    t0v_list_tmp.append(t0v)
+                    label_list_tmp.append(label_tri)
+                    t0c -= nSamples
+                    t0v -= nSamples
+                    nWindows += 1
+                nWindows_list.append(nWindows)
+                t0c_list.append(t0c_list_tmp)
+                t0v_list.append(t0v_list_tmp)
+                label_list.append(label_list_tmp)
+
             if cutoff:
-                nCP_array = np.arange(nCut,nCut+1).astype(int)
-                CP_array = np.where(nCP_array > 0, 1, 0).astype(int)
+                nCP_array = np.arange(nCut).astype(int)
             else:
-                nCP_array = np.arange(0,1)
-                CP_array = np.where(nCP_array > 0, 1, 0).astype(int)
-            N_samples = 1
+                nCP_array = np.arange(0, 1)
+            CP_array = np.where(nCP_array > 0, 1, 0).astype(int)
 
-        for s in range(N_samples):
+        # Compute statistics over all windows in all segments
+        for g in range(nSegments):
+
+            nWindows = nWindows_list[g]
+            if nWindows = 0:
+                break
+            dfc_wind = dfc_list[g]
+            dfv_wind = dfv_list[g]
+            nCutPrior = nCP_array[g]
+            cut_prior = CP_array[g]
+
+            for w in range(nWindows):
             
-            t0c = t0c_list[s]
-            t1c = t1c_list[s]
-            t0v = t0v_list[s]
-            t1v = t1v_list[s]
-            dfc_samp = dfc_list[s]
-            dfv_samp = dfv_list[s]
-            nCutPrior = nCP_array[s]
-            cut_prior = CP_array[s]
+                t0c = t0c_list[g][w]
+                t1c = t0c + nSamples
+                t0v = t0v_list[g][w]
+                t1v = t0v + nSamples
+                label_tri = label_list[g][w]
 
-            # Compute statistics of sample window
-            if nCharge > 0 and t1c > t0c:
-                if t1c > t0c:
-                    late_frac = dfc_samp['late'][t0c:t1c].mean(skipna=True)
-                    mean_charge_tot = dfc_samp['total_charge'][t0c:t1c] \
-                        .mean(skipna=True)
-                    mean_charge_late = dfc_samp['late_charge'][t0c:t1c] \
-                        .mean(skipna=True)
-                else:
-                    late_frac = np.nan
-                    mean_charge_tot = np.nan
-                    mean_charge_late = np.nan
-            if nVolume > 0 and t1v - t0v:
-                df_tmp = dfv_samp.iloc[t0v:t1v].copy()
-                mean_vol = df_tmp['volume_kgals'].mean(skipna=True)
-                if t1v > t0v:
-                    zero_frac_vol = \
-                        df_tmp.loc[df_tmp['volume_kgals'] == 0,
-                                   'volume_kgals'].count() / (t1v - t0v)
-                else:
-                    zero_frac_vol = 0
-                if t1v - t0v >= 3:
+                # Default values of window statistics
+                f_late = np.nan
+                mean_charge_tot = np.nan
+                mean_charge_late = np.nan
+                skew_vol = np.nan
+                f_anom3_vol = np.nan
+                f_anom4_vol = np.nan
+                f_anom5_vol = np.nan
+                max_anom_vol = np.nan
+                f_anom3_vol_log = np.nan
+                f_anom4_vol_log = np.nan
+                f_anom5_vol_log = np.nan
+                max_anom_vol_log = np.nan
+                f_manom3_vol = np.nan
+                f_manom4_vol = np.nan
+                f_manom5_vol = np.nan
+                max_manom_vol = np.nan
+                f_manom3_vol_log = np.nan
+                f_manom4_vol_log = np.nan
+                f_manom5_vol_log = np.nan
+                max_manom_vol_log = np.nan
+
+                # Compute statistics of sample window
+                # Stats of charge
+                if nCharge > 0 and t1c > t0c:
+                    if t1c > t0c:
+                        f_late = dfc_samp['late'][t0c:t1c].mean(skipna=True)
+                        mean_charge_tot = dfc_samp['total_charge'][t0c:t1c] \
+                            .mean(skipna=True)
+                        mean_charge_late = dfc_samp['late_charge'][t0c:t1c] \
+                            .mean(skipna=True)
+                # Stats of volume
+                if nVolume > 0 and t1v - t0v:
+                    df_tmp = dfv_samp.iloc[t0v:t1v].copy()
+                    mean_vol = df_tmp['volume_kgals'].mean(skipna=True)
+                    if t1v > t0v:
+                        f_zero_vol = \
+                            df_tmp.loc[df_tmp['volume_kgals'] == 0,
+                                       'volume_kgals'].count() / (t1v - t0v)
+                    else:
+                        f_zero_vol = 0
                     skew_vol = abs(skew(np.asarray(df_tmp['volume_kgals'])))
-                    n_anom3_vol = \
-                        df_tmp.loc[abs(df_tmp['volume_kgals_anom']) > 3,
-                                   'volume_kgals_anom'].count()
-                    n_anom4_vol = \
-                        df_tmp.loc[abs(df_tmp['volume_kgals_anom']) > 4,
-                                   'volume_kgals_anom'].count()
-                    n_anom5_vol = \
-                        df_tmp.loc[abs(df_tmp['volume_kgals_anom']) > 5,
-                                   'volume_kgals_anom'].count()
-                    max_anom_vol = np.max(np.abs(df_tmp['volume_kgals_anom']))
-                    n_anom3_vol_log = \
-                        df_tmp.loc[abs(df_tmp['vol_log_anom']) > 3,
-                                   'vol_log'].count()
-                    n_anom4_vol_log = \
-                        df_tmp.loc[abs(df_tmp['vol_log_anom']) > 4,
-                                   'vol_log'].count()
-                    n_anom5_vol_log = \
-                        df_tmp.loc[abs(df_tmp['vol_log_anom']) > 5,
-                                   'vol_log'].count()
-                    max_anom_vol_log = np.max(np.abs(df_tmp['vol_log_anom']))
-                    vol_dev = ztrans(np.asarray(df_tmp['volume_kgals']))
-                    vol_dev_abs = np.abs(vol_dev)
-                    n_anom3_local_vol = len(vol_dev_abs[vol_dev_abs > 3])
-                    n_anom4_local_vol = len(vol_dev_abs[vol_dev_abs > 4])
-                    n_anom5_local_vol = len(vol_dev_abs[vol_dev_abs > 5])
-                    max_anom_local_vol = np.asscalar(np.max(vol_dev_abs))
-                    vol_log_dev = ztrans(np.asarray(df_tmp['vol_log']))
-                    vol_log_dev_abs = np.abs(vol_log_dev)
-                    n_anom3_local_vol_log = \
-                        len(vol_log_dev_abs[vol_log_dev_abs > 3])
-                    n_anom4_local_vol_log = \
-                        len(vol_log_dev_abs[vol_log_dev_abs > 4])
-                    n_anom5_local_vol_log = \
-                        len(vol_log_dev_abs[vol_log_dev_abs > 5])
-                    max_anom_local_vol_log = \
-                        np.asscalar(np.max(vol_log_dev_abs))
+                    nAnom = df_tmp['volume_kgals_anom'].count()
+                    nMAnom = df_tmp['volume_kgals_manom'].count()
+                    if nAnom < nSamples or nMAnom < nSamples:
+                        print('i', i, 'g', g, 'w', w, 'nAnom', nAnom,
+                              'nMAnom', nMAnom)
+                    if nAnom > 0:
+                        f_anom3_vol = \
+                            df_tmp.loc[abs(df_tmp['volume_kgals_anom']) > 3,
+                                       'volume_kgals_anom'].count() / nAnom
+                        f_anom4_vol = \
+                            df_tmp.loc[abs(df_tmp['volume_kgals_anom']) > 4,
+                                       'volume_kgals_anom'].count() / nAnom
+                        f_anom5_vol = \
+                            df_tmp.loc[abs(df_tmp['volume_kgals_anom']) > 5,
+                                       'volume_kgals_anom'].count() / nAnom
+                        max_anom_vol = np.max(np.abs(df_tmp['volume_kgals_anom']))
+                        f_anom3_vol_log = \
+                            df_tmp.loc[abs(df_tmp['vol_log_anom']) > 3,
+                                       'vol_log_anom'].count() / nAnom
+                        f_anom4_vol_log = \
+                            df_tmp.loc[abs(df_tmp['vol_log_anom']) > 4,
+                                       'vol_log_anom'].count() / nAnom
+                        f_anom5_vol_log = \
+                            df_tmp.loc[abs(df_tmp['vol_log_anom']) > 5,
+                                       'vol_log_anom'].count() / nAnom
+                        max_anom_vol_log = np.max(np.abs(df_tmp['vol_log_anom']))
+
+                    if nMAnom > 0:
+                        f_manom3_vol = \
+                            df_tmp.loc[abs(df_tmp['volume_kgals_manom']) > 3,
+                                       'volume_kgals_manom'].count() / nMAnom
+                        f_manom4_vol = \
+                            df_tmp.loc[abs(df_tmp['volume_kgals_manom']) > 4,
+                                       'volume_kgals_manom'].count() / nMAnom
+                        f_manom5_vol = \
+                            df_tmp.loc[abs(df_tmp['volume_kgals_manom']) > 5,
+                                       'volume_kgals_manom'].count() / nMAnom
+                        max_manom_vol = np.max(np.abs(df_tmp['volume_kgals_manom']))
+                        f_manom3_vol_log = \
+                            df_tmp.loc[abs(df_tmp['vol_log_manom']) > 3,
+                                       'vol_log_manom'].count() / nMAnom
+                        f_manom4_vol_log = \
+                            df_tmp.loc[abs(df_tmp['vol_log_manom']) > 4,
+                                       'vol_log_manom'].count() / nMAnom
+                        f_manom5_vol_log = \
+                            df_tmp.loc[abs(df_tmp['vol_log_manom']) > 5,
+                                       'vol_log_manom'].count() / nMAnom
+                        max_manom_vol_log = np.max(np.abs(df_tmp['vol_log_manom']))
+
+                # Define binary cutoff label
+                if label_tri == 0: 
+                    cutoff_strict = 0
+                elif label_tri == 1:
+                    cutoff_strict = -1
                 else:
-                    skew_vol = np.nan
-                    n_anom3_vol = np.nan
-                    n_anom4_vol = np.nan
-                    n_anom5_vol = np.nan
-                    max_anom_vol = np.nan
-                    n_anom3_vol_log = np.nan
-                    n_anom4_vol_log = np.nan
-                    n_anom5_vol_log = np.nan
-                    max_anom_vol_log = np.nan
-                    n_anom3_local_vol = np.nan
-                    n_anom4_local_vol = np.nan
-                    n_anom5_local_vol = np.nan
-                    max_anom_local_vol = np.nan
-                    n_anom3_local_vol_log = np.nan
-                    n_anom4_local_vol_log = np.nan
-                    n_anom5_local_vol_log = np.nan
-                    max_anom_local_vol_log = np.nan
-            
-            df = pd.DataFrame(
-                data={'occupant_id': occ,
-                      'location_id': location_id,
-                      'latitude': latitude,
-                      'longitude': longitude,
-                      'meter_address': meter_address,
-                      'municipality': municipality,
-                      'cust_type': cust_type,
-                      'cust_type_code': cust_type_code,
-                      'meter_size': meter_size,
-                      'sample': s,
-                      'cutoff': cutoff,
-                      'nCutPrior': nCutPrior,
-                      'cut_prior': cut_prior,
-                      'late_frac': late_frac,
-                      'mean_charge_tot': mean_charge_tot,
-                      'mean_charge_late': mean_charge_late,
-                      'skew_vol': skew_vol,
-                      'zero_frac_vol': zero_frac_vol,
-                      'n_anom3_vol': n_anom3_vol,
-                      'n_anom4_vol': n_anom4_vol,
-                      'n_anom5_vol': n_anom5_vol,
-                      'max_anom_vol': max_anom_vol,
-                      'n_anom3_vol_log': n_anom3_vol_log,
-                      'n_anom4_vol_log': n_anom4_vol_log,
-                      'n_anom5_vol_log': n_anom5_vol_log,
-                      'max_anom_vol_log': max_anom_vol_log,
-                      'n_anom3_local_vol': n_anom3_local_vol,
-                      'n_anom4_local_vol': n_anom4_local_vol,
-                      'n_anom5_local_vol': n_anom5_local_vol,
-                      'max_anom_local_vol': max_anom_local_vol,
-                      'n_anom3_local_vol_log': n_anom3_local_vol_log,
-                      'n_anom4_local_vol_log': n_anom4_local_vol_log,
-                      'n_anom5_local_vol_log': n_anom5_local_vol_log,
-                      'max_anom_local_vol_log': max_anom_local_vol_log,
-                      'mean_vol': mean_vol,
-                     },
-               index=[k])
-            if k == 0:
-                feature_table = df.copy()
-            else:
-                feature_table = feature_table.append(df, ignore_index=True,
-                                                     sort=False)
-            k += 1
-            if cutoff:
-                icut += 1
-            else:
-                inocut += 1
-            i += 1
+                    cutoff_strict = 1
+
+                # Save feature values in output dataframe
+                df = pd.DataFrame(
+                    data={'occupant_id': occ,
+                          'location_id': location_id,
+                          'latitude': latitude,
+                          'longitude': longitude,
+                          'meter_address': meter_address,
+                          'municipality': municipality,
+                          'cust_type': cust_type,
+                          'cust_type_code': cust_type_code,
+                          'meter_size': meter_size,
+                          'segment': g,
+                          'window': w,
+                          'label': label_tri,
+                          'cutoff_strict': cutoff_strict,
+                          'cutoff': cutoff,
+                          'nCutPrior': nCutPrior,
+                          'cut_prior': cut_prior,
+                          'f_late': f_late,
+                          'mean_charge_tot': mean_charge_tot,
+                          'mean_charge_late': mean_charge_late,
+                          'skew_vol': skew_vol,
+                          'f_zero_vol': f_zero_vol,
+                          'f_anom3_vol': f_anom3_vol,
+                          'f_anom4_vol': f_anom4_vol,
+                          'f_anom5_vol': f_anom5_vol,
+                          'max_anom_vol': max_anom_vol,
+                          'f_anom3_vol_log': f_anom3_vol_log,
+                          'f_anom4_vol_log': f_anom4_vol_log,
+                          'f_anom5_vol_log': f_anom5_vol_log,
+                          'max_anom_vol_log': max_anom_vol_log,
+                          'f_manom3_vol': f_manom3_vol,
+                          'f_manom4_vol': f_manom4_vol,
+                          'f_manom5_vol': f_manom5_vol,
+                          'max_manom_vol': max_manom_vol,
+                          'f_manom3_vol_log': f_manom3_vol_log,
+                          'f_manom4_vol_log': f_manom4_vol_log,
+                          'f_manom5_vol_log': f_manom5_vol_log,
+                          'max_manom_vol_log': max_manom_vol_log,
+                          'mean_vol': mean_vol,
+                         },
+                   index=[k])
+
+                if k == 0:
+                    feature_table = df.copy()
+                else:
+                    feature_table = feature_table.append(df, ignore_index=True,
+                                                         sort=False)
+                k += 1
+                if cutoff:
+                    kcut += 1
+                else:
+                    knocut += 1
+        i += 1
 
     return feature_table
         
         
 def create_and_prep_feature_table(df_occupant, df_location, df_meter,
-                                  df_cutoffs, df_charge_align_clean,
-                                  df_volume_align_clean, ref_day, mode,
-                                  N_sample):
+                                  df_cutoffs, df_charge, df_volume,
+                                  ref_day, mode, nSamples, strict=False):
 
     today = pd.to_datetime(ref_day)
 
     # Create feature table
     feature_table = create_feature_table(df_occupant, df_location,
                                          df_meter, df_cutoffs,
-                                         df_charge_align_clean,
-                                         df_volume_align_clean,
-                                         today, mode, N_sample)
+                                         df_charge, df_volume,
+                                         today, mode, nSamples)
 
-    collist = ['late_frac', 'mean_charge_tot', 'mean_charge_late',
+    collist = ['f_late', 'mean_charge_tot', 'mean_charge_late',
                'mean_vol', 'skew_vol',
-               'n_anom3_vol','n_anom4_vol','n_anom5_vol','max_anom_vol',
-               'n_anom3_vol_log','n_anom4_vol_log',
-               'n_anom5_vol_log','max_anom_vol_log',
-               'n_anom3_local_vol','n_anom4_local_vol',
-               'n_anom5_local_vol','max_anom_local_vol',
-               'n_anom3_local_vol_log','n_anom4_local_vol_log',
-               'n_anom5_local_vol_log','max_anom_local_vol_log',
+               'f_anom3_vol','f_anom4_vol',
+               'f_anom5_vol','max_anom_vol',
+               'f_anom3_vol_log','f_anom4_vol_log',
+               'f_anom5_vol_log','max_anom_vol_log',
+               'f_manom3_vol','f_manom4_vol',
+               'f_manom5_vol','max_manom_vol',
+               'f_manom3_vol_log','f_manom4_vol_log',
+               'f_manom5_vol_log','max_manom_vol_log',
               ]
 
     # Handle customers that are missing stats
+    # NOTE: This ideally doesn't happen, and for the current set of features
+    # in the training period from the development dataset, it doesn't.
+    # But it is conceivable that this could happen in some circumstances.
     if mode == 'train':
         # Populate stats of cutoff customers who have no stats
         # with random samples from those with stats
         for col in collist:
             df = feature_table.loc[feature_table[col].isna(),
-                                   ['occupant_id','cutoff']].copy()
+                                   ['occupant_id','cutoff_strict']].copy()
             occs_cut_no_stats = df.loc[df['cutoff'] == 1, 'occupant_id'].values
             df = feature_table.loc[feature_table[col].notna(),
-                                   ['occupant_id','cutoff']].copy()
-            occs_cut_stats = df.loc[df['cutoff'] == 1, 'occupant_id'].values
+                                   ['occupant_id','cutoff_strict']].copy()
+            occs_cut_stats = df.loc[df['cutoff_strict'] == 1, 'occupant_id'].values
             nOccsCutStats = len(occs_cut_stats)
-            df = feature_table.loc[feature_table[col].notna()].copy()
-            df_cut_stats = df.loc[df['cutoff'] == 1].copy()
-            for occ in occs_cut_no_stats:
-                i = int(np.random.uniform(0, nOccsCutStats, 1))
-                feature_table.loc[feature_table['occupant_id'] == occ, col] = \
-                    df_cut_stats.iloc[i][col]
+            nOccsCutNoStats = len(occs_cut_no_stats)
+            if nOccsCutNoStats > 0:
+                print('WARNING: number of cutoffs with stats:', nOccsCutStats,
+                      'number of cutoffs without stats:', nOccsCutNoStats,
+                      'imputing missing stats with random samples from those',
+                      'with stats')
+                df = feature_table.loc[feature_table[col].notna()].copy()
+                df_cut_stats = df.loc[df['cutoff_strict'] == 1].copy()
+                for occ in occs_cut_no_stats:
+                    i = int(np.random.uniform(0, nOccsCutStats, 1))
+                    feature_table.loc[feature_table['occupant_id'] == occ, col] = \
+                        df_cut_stats.iloc[i][col]
 
         # Remove nocut customers who don't have stats
         for col in collist:
             df = feature_table.loc[feature_table[col].isna(),
-                                   ['occupant_id','cutoff']].copy()
-            occs_nocut_no_stats = df.loc[df['cutoff'] == 0,
+                                   ['occupant_id','cutoff_strict']].copy()
+            occs_nocut_no_stats = df.loc[df['cutoff_strict'] == 0,
                                          'occupant_id'].values
             for occ in occs_nocut_no_stats:
                 feature_table = \
@@ -524,41 +556,35 @@ def prep_features(config, df_meter, df_location, df_occupant,
                                                     df_volume, df_cutoffs)
 
     if mode == 'train':
-        N_sample_list = config['TRAINING']['N_SAMPLE_LIST']
-        N_sample_list = list(map(int, N_sample_list))
-        N_realizations = config['TRAINING']['N_REALIZATIONS']
+        nSamples_list = config['TRAINING']['N_SAMPLE_LIST']
+        nSamples_list = list(map(int, nSamples_list))
         ref_day = config['TRAINING']['REF_DAY']
         outdir = config['PATHS']['FEATURE_TABLE_DIR_TRAIN']
     else:
         best_model_info_file = config['PATHS']['BEST_MODEL_INFO_FILE']
         df_best_model_info = pd.read_csv(best_model_info_file)
-        N_sample_list = [int(df_best_model_info['N_sample'].values[0])]
-        N_realizations = 1
+        nSamples_list = [int(df_best_model_info['nSamples'].values[0])]
         ref_day = config['PREDICTION']['REF_DAY']
         outdir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
 
     np.random.seed(0)
-    for N_sample in N_sample_list:
-        for r in range(N_realizations):
-            print('....N_sample',N_sample,'realization',r)
-            feature_table = create_and_prep_feature_table(df_occupant,
-                                                          df_location,
-                                                          df_meter,
-                                                          df_cutoffs,
-                                                          df_charge,
-                                                          df_volume,
-                                                          ref_day,
-                                                          mode, N_sample)
+    for nSamples in nSamples_list:
+        print('....nSamples',nSamples)
+        feature_table = create_and_prep_feature_table(df_occupant,
+                                                      df_location,
+                                                      df_meter,
+                                                      df_cutoffs,
+                                                      df_charge,
+                                                      df_volume,
+                                                      ref_day,
+                                                      mode,
+                                                      nSamples,
+                                                      strict=True)
 
-            if mode == 'train':
-                rstr = '.r{:d}'.format(r)
-            else:
-                rstr = ''
-            outfile = outdir + '/feature_table.' + \
-                '{:s}.{:s}.N{:02d}{:s}.csv'.format(mode, ref_day,
-                                                   N_sample, rstr)
-            print('....writing to', outfile)
-            feature_table.to_csv(outfile)
+        outfile = outdir + '/feature_table.' + \
+            '{:s}.N{:02d}.{:s}.csv'.format(ref_day, nSamples, mode)
+        print('....writing to', outfile)
+        feature_table.to_csv(outfile)
 
     if mode == 'train':
         return 0

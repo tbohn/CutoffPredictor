@@ -21,28 +21,28 @@ def make_prediction(config, df_meter, df_location, df_occupant, df_volume,
     model_type = \
         df_best_model_info.loc[df_best_model_info['feature_combo_type'] == \
         combo_type, 'model_type'].values[0]
-    N_sample = \
+    nSamples = \
         df_best_model_info.loc[df_best_model_info['feature_combo_type'] == \
-        combo_type, 'N_sample'].values[0]
+        combo_type, 'nSamples'].values[0]
     r = df_best_model_info.loc[df_best_model_info['feature_combo_type'] == \
         combo_type, 'realization'].values[0]
     mode = 'predict'
     feature_list = {
         'with_cut_prior': [
-            'late_frac','zero_frac_vol','cut_prior','nCutPrior',
+            'f_late','f_zero_vol','cut_prior','nCutPrior',
             'cust_type_code','municipality','meter_size','skew_vol',
-            'n_anom3_vol','max_anom_vol',
-            'n_anom3_local_vol','max_anom_local_vol',
-            'n_anom3_vol_log','max_anom_vol_log',
-            'n_anom3_local_vol_log','max_anom_local_vol_log',
+            'f_anom3_vol','max_anom_vol',
+            'f_anom3_local_vol','max_anom_local_vol',
+            'f_anom3_vol_log','max_anom_vol_log',
+            'f_anom3_local_vol_log','max_anom_local_vol_log',
         ],
         'omit_cut_prior': [
-            'late_frac','zero_frac_vol',
+            'f_late','f_zero_vol',
             'cust_type_code','municipality','meter_size','skew_vol',
-            'n_anom3_vol','max_anom_vol',
-            'n_anom3_local_vol','max_anom_local_vol',
-            'n_anom3_vol_log','max_anom_vol_log',
-            'n_anom3_local_vol_log','max_anom_local_vol_log',
+            'f_anom3_vol','max_anom_vol',
+            'f_anom3_local_vol','max_anom_local_vol',
+            'f_anom3_vol_log','max_anom_vol_log',
+            'f_anom3_local_vol_log','max_anom_local_vol_log',
         ],
     }
 
@@ -83,7 +83,7 @@ def make_prediction(config, df_meter, df_location, df_occupant, df_volume,
         '{:s}.{:s}.{:s}.best.csv'.format(mode, today_str, combo_type)
     pred_file2 = prediction_dir + '/predictions.' + \
         '{:s}.{:s}.{:s}.N{:02d}.{:s}.csv'.format(model_type, mode, today_str,
-                                                 N_sample, combo_type)
+                                                 nSamples, combo_type)
     for pred_file in [pred_file1, pred_file2]:
         print('writing to', pred_file)
         df_pred.to_csv(pred_file)
@@ -91,7 +91,7 @@ def make_prediction(config, df_meter, df_location, df_occupant, df_volume,
         '{:s}.{:s}.{:s}.best.csv'.format(mode, today_str, combo_type)
     prob_file2 = prediction_dir + '/probabilities.' + \
         '{:s}.{:s}.{:s}.N{:02d}.{:s}.csv'.format(model_type, mode, today_str,
-                                                 N_sample, combo_type)
+                                                 nSamples, combo_type)
     for prob_file in [prob_file1, prob_file2]:
         print('writing to', prob_file)
         df_prob.to_csv(prob_file)
