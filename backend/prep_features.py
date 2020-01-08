@@ -511,7 +511,8 @@ def create_and_prep_feature_table(df_occupant, df_location, df_meter,
             occs_cut_no_stats = df.loc[df['cutoff'] == 1, 'occupant_id'].values
             df = feature_table.loc[feature_table[col].notna(),
                                    ['occupant_id','cutoff_strict']].copy()
-            occs_cut_stats = df.loc[df['cutoff_strict'] == 1, 'occupant_id'].values
+            occs_cut_stats = df.loc[df['cutoff_strict'] == 1,
+                                    'occupant_id'].values
             nOccsCutStats = len(occs_cut_stats)
             nOccsCutNoStats = len(occs_cut_no_stats)
             if nOccsCutNoStats > 0:
@@ -523,8 +524,8 @@ def create_and_prep_feature_table(df_occupant, df_location, df_meter,
                 df_cut_stats = df.loc[df['cutoff_strict'] == 1].copy()
                 for occ in occs_cut_no_stats:
                     i = int(np.random.uniform(0, nOccsCutStats, 1))
-                    feature_table.loc[feature_table['occupant_id'] == occ, col] = \
-                        df_cut_stats.iloc[i][col]
+                    feature_table.loc[feature_table['occupant_id'] == occ,
+                                      col] = df_cut_stats.iloc[i][col]
 
         # Remove nocut customers who don't have stats
         for col in collist:
@@ -582,7 +583,7 @@ def prep_features(config, df_meter, df_location, df_occupant,
                                                       strict=True)
 
         outfile = outdir + '/feature_table.' + \
-            '{:s}.N{:02d}.{:s}.csv'.format(ref_day, nSamples, mode)
+            '{:s}.{:s}.N{:02d}.csv'.format(mode, ref_day, nSamples)
         print('....writing to', outfile)
         feature_table.to_csv(outfile)
 
