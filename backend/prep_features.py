@@ -476,9 +476,9 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
         
 def create_and_prep_feature_table(df_occupant, df_location, df_meter,
                                   df_cutoffs, df_charge, df_volume,
-                                  ref_day, mode, nSamples, strict=False):
+                                  ref_date, mode, nSamples, strict=False):
 
-    today = pd.to_datetime(ref_day)
+    today = pd.to_datetime(ref_date)
 
     # Create feature table
     feature_table = create_feature_table(df_occupant, df_location,
@@ -546,7 +546,7 @@ def create_and_prep_feature_table(df_occupant, df_location, df_meter,
     return feature_table
 
 
-# Prepare features for model training
+# Prepare features for model input
 def prep_features(config, df_meter, df_location, df_occupant,
                   df_volume, df_charge, df_cutoffs, mode):
 
@@ -559,13 +559,13 @@ def prep_features(config, df_meter, df_location, df_occupant,
     if mode == 'train':
         nSamples_list = config['TRAINING']['N_SAMPLE_LIST']
         nSamples_list = list(map(int, nSamples_list))
-        ref_day = config['TRAINING']['REF_DAY']
+        ref_date = config['TRAINING']['REF_DATE']
         outdir = config['PATHS']['FEATURE_TABLE_DIR_TRAIN']
     else:
         best_model_info_file = config['PATHS']['BEST_MODEL_INFO_FILE']
         df_best_model_info = pd.read_csv(best_model_info_file)
         nSamples_list = [int(df_best_model_info['nSamples'].values[0])]
-        ref_day = config['PREDICTION']['REF_DAY']
+        ref_date = config['PREDICTION']['REF_DATE']
         outdir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
 
     np.random.seed(0)
@@ -577,13 +577,13 @@ def prep_features(config, df_meter, df_location, df_occupant,
                                                       df_cutoffs,
                                                       df_charge,
                                                       df_volume,
-                                                      ref_day,
+                                                      ref_date,
                                                       mode,
                                                       nSamples,
                                                       strict=True)
 
         outfile = outdir + '/feature_table.' + \
-            '{:s}.{:s}.N{:02d}.csv'.format(mode, ref_day, nSamples)
+            '{:s}.{:s}.N{:02d}.csv'.format(mode, ref_date, nSamples)
         print('....writing to', outfile)
         feature_table.to_csv(outfile)
 

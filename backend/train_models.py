@@ -208,10 +208,12 @@ def apply_model(model, feature_table, feature_list, label, label_val_cut,
 
     return [probabilities, auc_roc, thresholds, FPR, TPR, F1, conf_mat, R2]
 
-    
+ 
 def train_and_test_model(model_type, feature_table_train, feature_table_test,
                          feature_list, label, label_val_cut, categoricals=None,
-                         wtcol=None, regularization=False, grid_search=False):
+                         wtcol=None, nfolds=5, fold_asgmnt='Stratified',
+                         regularization=False, ntrees=100,
+                         max_depth=20, max_depth_list=None):
 
     # Set up inputs for model
     df_train = set_up_H2OFrame(feature_table_train, feature_list,
@@ -219,14 +221,10 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
     df_test = set_up_H2OFrame(feature_table_test, feature_list,
                               categoricals, label)
 
-    # Cross-validation parameters
-    nfolds = 5
-    fold_asgmnt = 'Stratified'
-
     # Instantiate model
     if model_type == 'random_forest':
-        if grid_search == False:
-            model = H2ORandomForestEstimator(ntrees=100, max_depth=20,
+        if max_depth_list == None:
+            model = H2ORandomForestEstimator(ntrees=ntrees, max_depth=max_depth,
                                              training_frame=df_train,
                                              validation_frame=df_test,
                                              nfolds=nfolds,
@@ -237,7 +235,7 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
 #            model_grid = H2OGridSearch(model=H2ORandomForestEstimator,
 #                                       grid_id='model_grid',
 #                                       hyper_params={
-#                                           'max_depth':list(range(3,21))
+#                                           'max_depth':max_depth_list
 #                                       })
     elif model_type == 'logistic_regression':
         if regularization == True:
@@ -265,18 +263,17 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
     # Here's where we do the grid search over max_depth for random forest
     if model_type == 'random_forest' and grid_search == True:
 #        model_grid.train(x=feature_list, y=label, training_frame=df_train,
-#                         weights_column=wtcol, ntrees=100,
+#                         weights_column=wtcol, ntrees=ntrees,
 #                         validation_frame=df_test, nfolds=nfolds,
 #                         fold_assignment=fold_asgmnt, seed=1)
 #        # Get the best-performing model
 #        model_gridperf = model_grid.get_grid(sort_by='auc', decreasing=True)
 #        model = model_gridperf.models[0]
-        max_depth_list = list(range(3,21))
         nMaxDepth = len(max_depth_list)
         models = []
         aucs = np.zeros([nMaxDepth])
         for i in range(nMaxDepth):
-            model = H2ORandomForestEstimator(ntrees=100,
+            model = H2ORandomForestEstimator(ntrees=ntrees,
                                              max_depth=max_depth_list[i],
                                              training_frame=df_train,
                                              validation_frame=df_test,
@@ -348,15 +345,24 @@ def train_and_compare_models(config):
     feature_dir = config['PATHS']['FEATURE_TABLE_DIR_TRAIN']
     model_save_dir = config['PATHS']['MODEL_SAVE_DIR']
     model_perf_dir = config['PATHS']['MODEL_PERF_DIR']
+    prediction_dir = config['PATHS']['PREDICTIONS_DIR_TRAIN']
 
     # Option settings
     mode = 'train'
-    ref_day = config['TRAINING']['REF_DAY']
+    ref_date = config['TRAINING']['REF_DATE']
+    option_cut_prior = config['TRAINING']['FEATURES_CUT_PRIOR']
+    option_metadata = config['TRAINING']['FEATURES_METADATA']
+    option_anom = config['TRAINING']['FEATURES_ANOM']
     model_types = config['TRAINING']['MODEL_TYPES']
     nMTypes = len(model_types)
     nSamples_list = config['TRAINING']['N_SAMPLE_LIST']
     nSamples_list = list(map(int, nSamples_list))
     nNSamples = len(nSamples_list)
+
+    # Options string for filenames
+    opt_str = '{:s}.{:s}.{:s}.{:s}.{:s}'.format(mode, ref_date,
+                                                option_cut_prior,
+                                                option_metadata, option_anom)
 
     # To Do: this should ideally be moved to some separate config-type function
     # Types of features
@@ -367,23 +373,17 @@ def train_and_compare_models(config):
     categoricals = feature_list_metadata.copy()
     categoricals.append(feature_list_cut_prior[0])
     # Valid feature combo options
-    anom_types_options = ['anom', 'manom']
+    anom_types_options = ['anom', 'manom', 'none']
     metadata_options = ['with_meta', 'no_meta']
     cut_prior_options = ['with_cut_prior', 'no_cut_prior']
 
-NOTE: have user select combo stuff in config file
-
-    # User-selected feature combo options
-    option_cut_prior = config['TRAINING']['FEATURE_OPTIONS']['CUT_PRIOR']
-    option_metadata = config['TRAINING']['FEATURE_OPTIONS']['METADATA']
-    option_anom = config['TRAINING']['FEATURE_OPTIONS']['ANOM']
-
+    # To Do: put this logic and data into a separate function and/or file
     # Build feature list
     feature_list = feature_list_basic.copy()
-    if option_anom == 'manom':
-        feature_list.append(feature_list_anom[1])
-    else:
+    if option_anom == 'anom':
         feature_list.append(feature_list_anom[0])
+    elif option_anom == 'manom':
+        feature_list.append(feature_list_anom[1])
     if option_metadata = 'with_meta':
         feature_list.extend(feature_list_metadata)
     if option_cut_prior = 'with_cut_prior':
@@ -392,8 +392,6 @@ NOTE: have user select combo stuff in config file
     feature_and_label_list.append(label)
     feature_label_wt_list = feature_and_label_list.copy()
     feature_label_wt_list.append(wtcol)
-
-NOTE: should regularization be automatically set based on presence of categoricals, or should it be user-selected option? Why would only categoricals need regularization?
 
     # Label
     label = 'cutoff_strict'
@@ -406,6 +404,9 @@ NOTE: should regularization be automatically set based on presence of categorica
     # Weights column
     wtcol = 'weights'
 
+    # Regularization
+    regularization = True
+
     # Arrays of performance metrics
     auroc_array = np.zeros([nNSamples,nMTypes])
 
@@ -415,7 +416,7 @@ NOTE: should regularization be automatically set based on presence of categorica
 
         # Read feature table
         infile = feature_dir + '/feature_table.{:s}.{:s}.N{:02d}.csv' \
-            .format(mode, ref_day, nSamples)
+            .format(mode, ref_date, nSamples)
         print('....reading', infile)
         feature_table = pd.read_csv(infile)
 
@@ -434,14 +435,12 @@ NOTE: should regularization be automatically set based on presence of categorica
         m = 0
         for model_type in model_types:
             if model_type == 'random_forest':
-                grid_search = True
+                max_depth_list = config['TRAINING']['MAX_DEPTH_LIST']
             else:
-                grid_search = False
+                max_depth_list = None
 
-            instance_str = '{:s}.{:s}.N{:02d}.{:s}'.format(mode,
-                                                           ref_date_str,
-                                                           nSamples,
-                                                           model_type)
+            instance_str = '{:s}.N{:02d}.{:s}'.format(opt_str, nSamples,
+                                                      model_type)
 
             # Train and test model
             [model, coefs,
@@ -454,8 +453,11 @@ NOTE: should regularization be automatically set based on presence of categorica
                                       feature_table_train[feature_label_wt_list],
                                       feature_table_test[feature_and_label_list],
                                       feature_list, label, label_val_cut,
-                                      categoricals, wtcol,
-                                      regularization, grid_search)
+                                      categoricals=categoricals,
+                                      wtcol=wtcol,
+                                      regularization=regularization,
+                                      max_depth_list=max_depth_list)
+
             print('....nSamples', nSamples, model_type, 'AUC_ROC[xval]',
                   auc_roc['xval'])
 
@@ -467,20 +469,24 @@ NOTE: should regularization be automatically set based on presence of categorica
             with open(model_path_file, 'w') as f:
                 f.write(model_path)
 
+            # Save model predictions
+            df_prob = pd.DataFrame(data={'p_cutoff':probabilities})
+            prob_file = prediction_dir + '/probabilities.' + instance_str + '.csv'
+            df_prob.to_csv(prob_file)
+
             # Write performance metrics to a file
             perf_file = model_perf_dir + '/stats.' + instance_str + '.csv'
             f = open(perf_file, 'w')
-            tmpstr = 'model_type,nSamples,' + \
-                     'AUROC_train,FPR_train,TPR_train,F1_train,R2_train,' + \
+            tmpstr = 'AUROC_train,FPR_train,TPR_train,F1_train,R2_train,' + \
                      'AUROC_xval,' + \
                      'AUROC_test,FPR_test,TPR_test,F1_test,R2_test\n'
             f.write(tmpstr)
-            tmpstr1 = '{:s},{:d},{:.6f},{:.6f},{:.6f},{:.6f},{:.6f},' \
-                .format(model_type, nSamples, auc_roc['train'],
-                        FPR['train'], TPR['train'], F1['train'], R2['train'])
+            tmpstr1 = '{:.6f},{:.6f},{:.6f},{:.6f},{:.6f},' \
+                .format(auc_roc['train'], FPR['train'], TPR['train'],
+                        F1['train'], R2['train'])
             tmpstr2 = '{:.6f},{:.6f},{:.6f},{:.6f},{:.6f},{:.6f}\n' \
-                .format(auc_roc['xval'], auc_roc['test'],
-                        FPR['test'], TPR['test'], F1['test'], R2['test'])
+                .format(auc_roc['xval'], auc_roc['test'], FPR['test'],
+                        TPR['test'], F1['test'], R2['test'])
             f.write(tmpstr1 + tmpstr2)
             f.close()
 
@@ -499,46 +505,49 @@ NOTE: should regularization be automatically set based on presence of categorica
     mmax = imax_flat % 2
     nmax = int(imax_flat / 2)
 
-#    # Print out metrics of all models just for reference
-#    for n in range(nNSamples):
-#        for m in range(nMTypes):
-#            print(nSamples_list[n],model_types[m],auroc_array[n,m])
-
     print('best model:', model_types[mmax], 'nSamples:', nSamples_list[nmax],
               'ROC AUC cross validation over train:', auroc_array[n, m])
 
-NOTE: save best model info
-NOTE: copy best saved model to best model file
-NOTE: copy best model saved perf stats to best model perf stats file
     # Save the relevant details of the best model
     best_model_info = {}
     nSamples = nSamples_list[nmax]
     model_type = model_types[mmax]
-    best_model_info['ref_day'] = ref_day
-    best_model_info['rebalance'] = rebalance
-    best_model_info['nSamples'] = nSamples_list[nmax]
-    best_model_info['model_type'] = model_types[mmax]
+    instance_str = '{:s}.N{:02d}.{:s}'.format(opt_str, nSamples, model_type)
+    best_model_info['ref_date'] = ref_date
     best_model_info['option_cut_prior'] = option_cut_prior
     best_model_info['option_metadata'] = option_metadata
     best_model_info['option_anom'] = option_anom
     best_model_info['feature_list'] = feature_list
-
-        model_file_best = model_save_dir + \
-            '/model.{:s}.{:s}.{:s}.best.sav'.format(mode, ref_day, combo_type)
-        copyfile(model_file, model_file_best)
-    
-
-        # Copy feature tables with best nSamples to 'best'
-        feature_dir = config['PATHS']['FEATURE_TABLE_DIR_TRAIN']
-        infile = feature_dir + '/feature_table.' + \
-            '{:s}.{:s}.N{:02d}.r{:d}.csv'.format(mode, ref_day, nSamples, r)
-        outfile = feature_dir + '/feature_table.' + \
-            '{:s}.{:s}.{:s}.best.csv'.format(mode, ref_day, combo_type)
-        copyfile(infile, outfile)
-
-    # Save the relevant details of the best model
-    best_model_info_file = config['PATHS']['BEST_MODEL_INFO_FILE']
+    best_model_info['nSamples'] = nSamples
+    best_model_info['model_type'] = model_type
+    best_model_info['rebalance'] = rebalance
+#    best_model_info_file = config['PATHS']['BEST_MODEL_INFO_FILE']
+    best_model_info_file = model_save_dir + '/best_model_info.' + opt_str + \
+        '.csv'
     df_best_model_info = pd.DataFrame(data=best_model_info)
     df_best_model_info.to_csv(best_model_info_file)
+
+    # Copy best saved model to file named 'best'
+    model_path_file = model_save_dir + '/model.' + instance_str + '.path.txt'
+    model_path_file_best = model_save_dir + '/model.' + opt_str + \
+        '.best.path.txt'
+    copyfile(model_path_file, model_path_file_best)
+ 
+    # Copy predictions of best model to file named 'best'
+    prob_file = prediction_dir + '/probabilities.' + instance_str + '.csv'
+    prob_file_best = prediction_dir + '/probabilities.' + opt_str + '.best.csv'
+    copyfile(prob_file, prob_file_best)
+
+    # Copy perf stats of best model to file named 'best'
+    perf_file = model_perf_dir + '/stats.' + instance_str + '.csv'
+    perf_file_best = model_perf_dir + '/stats.' + opt_str + '.best.csv'
+    copyfile(perf_file, perf_file_best)
+
+    # Copy feature tables with best nSamples to 'best'
+    feature_dir = config['PATHS']['FEATURE_TABLE_DIR_TRAIN']
+    infile = feature_dir + '/feature_table.{:s}.{:s}.N{:02d}.csv' \
+        .format(mode, ref_date, nSamples)
+    outfile = feature_dir + '/feature_table.' + opt_str + '.best.csv'
+    copyfile(infile, outfile)
 
     return 0

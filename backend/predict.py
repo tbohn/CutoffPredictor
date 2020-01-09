@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import pandas as pd
-import pickle
+import h2o
 from . import prep_features as prfe
 from . import train_models as trmo
 
@@ -9,42 +9,46 @@ from . import train_models as trmo
 def make_prediction(config, df_meter, df_location, df_occupant, df_volume,
                     df_charge, df_cutoffs):
 
-    today_str = config['PREDICTION']['REF_DAY']
-    combo_type = config['PREDICTION']['COMBO_TYPE']
+    mode = 'predict'
+    ref_date_train = config['TRAINING']['REF_DATE']
+    today_str = config['PREDICTION']['REF_DATE']
+    option_cut_prior = config['PREDICTION']['FEATURES_CUT_PRIOR']
+    option_metadata = config['PREDICTION']['FEATURES_METADATA']
+    option_anom = config['PREDICTION']['FEATURES_ANOM']
+    opt_str_train = '{:s}.{:s}.{:s}.{:s}.{:s}'.format('train', ref_date_train,
+                                                      option_cut_prior,
+                                                      option_metadata,
+                                                      option_anom)
+    opt_str_pred = '{:s}.{:s}.{:s}.{:s}.{:s}'.format(mode, today_str,
+                                                     option_cut_prior,
+                                                     option_metadata,
+                                                     option_anom)
 
     # Read the relevant details of the best model from the best_model_info_file
     best_model_info_file = config['PATHS']['BEST_MODEL_INFO_FILE']
     df_best_model_info = pd.read_csv(best_model_info_file)
-    ref_day_str = \
-        df_best_model_info.loc[df_best_model_info['feature_combo_type'] == \
-        combo_type, 'ref_day'].values[0]
-    model_type = \
-        df_best_model_info.loc[df_best_model_info['feature_combo_type'] == \
-        combo_type, 'model_type'].values[0]
-    nSamples = \
-        df_best_model_info.loc[df_best_model_info['feature_combo_type'] == \
-        combo_type, 'nSamples'].values[0]
-    r = df_best_model_info.loc[df_best_model_info['feature_combo_type'] == \
-        combo_type, 'realization'].values[0]
-    mode = 'predict'
-    feature_list = {
-        'with_cut_prior': [
-            'f_late','f_zero_vol','cut_prior','nCutPrior',
-            'cust_type_code','municipality','meter_size','skew_vol',
-            'f_anom3_vol','max_anom_vol',
-            'f_anom3_local_vol','max_anom_local_vol',
-            'f_anom3_vol_log','max_anom_vol_log',
-            'f_anom3_local_vol_log','max_anom_local_vol_log',
-        ],
-        'omit_cut_prior': [
-            'f_late','f_zero_vol',
-            'cust_type_code','municipality','meter_size','skew_vol',
-            'f_anom3_vol','max_anom_vol',
-            'f_anom3_local_vol','max_anom_local_vol',
-            'f_anom3_vol_log','max_anom_vol_log',
-            'f_anom3_local_vol_log','max_anom_local_vol_log',
-        ],
-    }
+    nSamples = df_best_model_info['nSamples'].values[0]
+    model_type = df_best_model_info['model_type'].values[0]
+    instance_str = '{:s}.N{:02d}.{:s}'.format(opt_str_pred, nSamples,
+                                              model_type)
+
+    # To Do: put this logic and data into a separate function and/or file
+    # Build feature list
+    feature_list_basic = ['f_late', 'f_zero_vol']
+    feature_list_anom = ['f_anom3_vol', 'f_manom3_vol']
+    feature_list_metadata = ['cust_type_code', 'municipality', 'meter_size']
+    feature_list_cut_prior = ['cut_prior']
+    categoricals = feature_list_metadata.copy()
+    categoricals.append(feature_list_cut_prior[0])
+    feature_list = feature_list_basic.copy()
+    if option_anom == 'anom':
+        feature_list.append(feature_list_anom[0])
+    elif option_anom == 'manom':
+        feature_list.append(feature_list_anom[1])
+    if option_metadata = 'with_meta':
+        feature_list.extend(feature_list_metadata)
+    if option_cut_prior = 'with_cut_prior':
+        feature_list.append(feature_list_cut_prior[0])
 
     # Prepare feature table for the model prediction
     print('preparing feature table')
@@ -54,44 +58,31 @@ def make_prediction(config, df_meter, df_location, df_occupant, df_volume,
 
     # Read saved model
     model_save_dir = config['PATHS']['MODEL_SAVE_DIR']
-    ref_day_train = config['TRAINING']['REF_DAY']
-    model_file = model_save_dir + '/model.{:s}.{:s}.{:s}.best.sav' \
-        .format('train', ref_day_train, combo_type)
+    model_path_file_best = model_save_dir + '/model.' + opt_str_train + \
+        '.best.path.txt'
+    with open(model_path_file_best, 'r') as f:
+        model_file = f.read()
     print('loading', model_file)
-    model = pickle.load(open(model_file, 'rb'))
+    model = h2o.loadModel(model_file)
 
     # Make prediction
-    [predictions,
-     probabilities,
-     tmp, tmp, tmp, tmp, tmp] = \
-        trmo.apply_fitted_model(model, feature_table, feature_list[combo_type])
-    df_pred = pd.DataFrame(data=predictions, columns=['cutoff'])
-    df_prob = pd.DataFrame(data=probabilities, columns=['p_nocut', 'p_cutoff'])
-            
+    [probabilities, tmp, tmp, tmp, tmp, tmp, tmp, tmp] = \
+        trmo.apply_model(model, feature_table, feature_list,
+                         label, label_val_cut, categoricals,
+                         score=False)
+    df_prob = pd.DataFrame(data={'p_cutoff':probabilities})
 
     # Save the feature table as 'best' for consistency
     # (prep_features() already saved it, but we want to copy it to a simpler
     # filename for use by the dashboard)
     feature_dir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
-    outfile = feature_dir + '/feature_table.{:s}.{:s}.{:s}.best.csv' \
-        .format(mode, today_str, combo_type)
+    outfile = feature_dir + '/feature_table.' + opt_str_pred + '.best.csv'
     feature_table.to_csv(outfile)
  
     # Save prediction
     prediction_dir = config['PATHS']['PREDICTIONS_DIR_PRED']
-    pred_file1 = prediction_dir + '/predictions.' + \
-        '{:s}.{:s}.{:s}.best.csv'.format(mode, today_str, combo_type)
-    pred_file2 = prediction_dir + '/predictions.' + \
-        '{:s}.{:s}.{:s}.N{:02d}.{:s}.csv'.format(model_type, mode, today_str,
-                                                 nSamples, combo_type)
-    for pred_file in [pred_file1, pred_file2]:
-        print('writing to', pred_file)
-        df_pred.to_csv(pred_file)
-    prob_file1 = prediction_dir + '/probabilities.' + \
-        '{:s}.{:s}.{:s}.best.csv'.format(mode, today_str, combo_type)
-    prob_file2 = prediction_dir + '/probabilities.' + \
-        '{:s}.{:s}.{:s}.N{:02d}.{:s}.csv'.format(model_type, mode, today_str,
-                                                 nSamples, combo_type)
+    prob_file1 = prediction_dir + '/probabilities.' + instance_str + '.csv'
+    prob_file2 = prediction_dir + '/probabilities.' + opt_str_pred + '.best.csv'
     for prob_file in [prob_file1, prob_file2]:
         print('writing to', prob_file)
         df_prob.to_csv(prob_file)

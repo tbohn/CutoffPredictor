@@ -22,26 +22,29 @@ import math
 # Fetch the dataset
 def read_df(config):
 
-    today_str = config['PREDICTION']['REF_DAY']
-    combo_type = config['PREDICTION']['COMBO_TYPE']
     mode = 'predict'
+    today_str = config['PREDICTION']['REF_DATE']
+    option_cut_prior = config['PREDICTION']['FEATURES_CUT_PRIOR']
+    option_metadata = config['PREDICTION']['FEATURES_METADATA']
+    option_anom = config['PREDICTION']['FEATURES_ANOM']
+    opt_str = '{:s}.{:s}.{:s}.{:s}.{:s}'.format(mode, today_str,
+                                                option_cut_prior,
+                                                option_metadata, option_anom)
 
     # Read the feature file
     feature_dir = config['PATHS']['FEATURE_TABLE_DIR_PRED']
-    feature_file = feature_dir + '/feature_table.' + \
-       '{:s}.{:s}.{:s}.best.csv'.format(mode, today_str, combo_type)
+    feature_file = feature_dir + '/feature_table.' + opt_str + '.best.csv'
     df = pd.read_csv(feature_file)
 
     # Merge the probabilities into the feature table
     prediction_dir = config['PATHS']['PREDICTIONS_DIR_PRED']
-    prob_file = prediction_dir + '/probabilities.' + \
-        '{:s}.{:s}.{:s}.best.csv'.format(mode, today_str, combo_type)
+    prob_file = prediction_dir + '/probabilities.' + opt_str + '.best.csv'
     probabilities = pd.read_csv(prob_file)
     df['p_cutoff'] = probabilities['p_cutoff']
 
     # Convert fractions to percentages
-    df['p_cutoff'] *= 100
-    df['late_frac'] *= 100
+    for col in ['p_cutoff', 'f_late', 'f_zero', 'f_anom3_vol', 'f_manom3_vol']:
+        df[col] *= 100
 
     # Drop duplicates
     df.drop_duplicates('location_id', keep='first', inplace=True)
@@ -184,11 +187,11 @@ def dashboard(config):
     lon_center = config['MAPPING']['MAP_CENTER_LON']
     p_cut_col = 'p_cutoff'
     feature_longname = {
-        'p_cutoff': 'Cutoff Probability (%)',
+        p_cut_col: 'Cutoff Probability (%)',
         'mean_charge_tot': 'Mean Monthly Charges ($/mo)',
         'mean_charge_late': 'Mean Late Charges ($/mo)',
         'mean_vol': 'Mean Volume Usage (kGal/mo)',
-        'late_frac': 'Late Payment Pct (%)',
+        'f_late': 'Late Payment Pct (%)',
         'nCutPrior': 'Number of Prior Cutoffs',
         'meter_address': 'Address',
         'move_in_date': 'Move-In Date',
@@ -197,27 +200,27 @@ def dashboard(config):
         'meter_size': 'Meter Size',
     }
     feature_total_str = {
-        'p_cutoff': 'Predicted Cutoffs',
+        p_cut_col: 'Predicted Cutoffs',
         'mean_charge_tot': 'Total Revenue Loss ($K/mo)',
         'mean_charge_late': 'Totale Late Charges ($K/mo)',
         'mean_vol': 'Total Volume Loss (kGal/mo)',
-        'late_frac': 'Total Late Payment Pct (%)',
+        'f_late': 'Total Late Payment Pct (%)',
         'nCutPrior': 'Total No. Prior Cutoffs',
     }
     feature_mean_str = {
-        'p_cutoff': 'Predicted Cutoffs',
+        p_cut_col: 'Predicted Cutoffs',
         'mean_charge_tot': 'Mean Revenue Loss ($K/mo)',
         'mean_charge_late': 'Mean Late Charges ($K/mo)',
         'mean_vol': 'Mean Volume Loss (kGal/mo)',
-        'late_frac': 'Mean Late Payment Pct (%)',
+        'f_late': 'Mean Late Payment Pct (%)',
         'nCutPrior': 'Mean No. Prior Cutoffs',
     }
     factor_total = {
-        'p_cutoff': 1,
+        p_cut_col: 1,
         'mean_charge_tot': 0.001,
         'mean_charge_late': 0.001,
         'mean_vol': 1,
-        'late_frac': 1,
+        'f_late': 1,
         'nCutPrior': 1,
     }
 
@@ -521,7 +524,7 @@ def dashboard(config):
         df = df.loc[df[p_cut_col] >= float(thresh)]
         column_list = ["meter_address", "p_cutoff",
                        "mean_charge_tot", "mean_charge_late",
-                       "mean_vol", "late_frac", "nCutPrior"]
+                       "mean_vol", "f_late", "nCutPrior"]
         column_longnames = [feature_longname[col] for col in column_list]
         df = df.round({
                        'mean_charge_tot': 2,
