@@ -54,14 +54,18 @@ The keys that need to be defined are:
 
 5. `[TRAINING]` section:
 - Parameters for model training
-  - `N_SAMPLE_LIST` = comma-separated list of sample window lengths to consider (in months)
-  - `N_REALIZATIONS` = number of realizations of random window positions
-  - `MODEL_TYPES` = comma-separated list of model types (no spaces); valid values are 'logistic_regression' or 'random_forest'
-  - `COMBO_TYPES` = comma-separated list of feature combination types (no spaces); valid values are 'with_cut_prior' or 'omit_cut_prior'
   - `REF_DAY` = reference day (yyyy-mm-dd); this is the end date of the train/test period
+  - `N_SAMPLE_LIST` = comma-separated list of sample window lengths to consider (in months)
+  - `MODEL_TYPES` = comma-separated list of model types (no spaces); valid values are 'logistic_regression' or 'random_forest'
+  - `MAX_DEPTH_LIST`: comma-separated list of values of `max_depth` (used in `random_forest` model) to explore; the minimum value should generally be set to 3 and the maximum should be somewhere between 5 and 20
+  - `FEATURES_CUT_PRIOR`: indicates whether to include among the feature set a boolean flag signifying whether a customer has had a prior cutoff; this is only possible for utilities that have recorded such information (not all do this); valid values are `'no_cut_prior'` and `'with_cut_prior'`
+  - `FEATURES_METADATA`: indicates whether to include among the feature set the three customer metadata variables `'cust_type_code'`, `'municipality'`, and `'meter_size'`; valid values are `'no_meta'` and `'with_meta'`
+  - `FEATURES_ANOM`: indicates which volume anomaly metric to include among the feature set; valid values are `'anom'` (use the simple anomaly feature `'f_anom3_vol'`), `'manom'` (use the monthly anomaly feature `'f_manom3_vol'`), and `'none'`
 
 6. `[PREDICTION]` section:
 - Parameters for prediction
-  - `COMBO_TYPE` = feature combination type desired for the prediction; valid values are 'with_cut_prior' or 'omit_cut_prior'
   - `REF_DAY` = reference day (yyyy-mm-dd); this is the current date at the time of the prediction
+  - `FEATURES_CUT_PRIOR`: indicates whether to include among the feature set a boolean flag signifying whether a customer has had a prior cutoff; this is only possible for utilities that have recorded such information (not all do this); valid values are `'no_cut_prior'` and `'with_cut_prior'`
+  - `FEATURES_METADATA`: indicates whether to include among the feature set the three customer metadata variables `'cust_type_code'`, `'municipality'`, and `'meter_size'`; valid values are `'no_meta'` and `'with_meta'`
+  - `FEATURES_ANOM`: indicates which volume anomaly metric to include among the feature set; valid values are `'anom'` (use the simple anomaly feature `'f_anom3_vol'`), `'manom'` (use the monthly anomaly feature `'f_manom3_vol'`), and `'none'`
 
