@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import pandas as pd
 import numpy as np
-from statsmodels.tsa.seasonal import seasonal_decompose
 from scipy.stats import skew
 import math
 from . import prep_data as prda
