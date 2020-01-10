@@ -45,9 +45,9 @@ def make_prediction(config, df_meter, df_location, df_occupant, df_volume,
         feature_list.append(feature_list_anom[0])
     elif option_anom == 'manom':
         feature_list.append(feature_list_anom[1])
-    if option_metadata = 'with_meta':
+    if option_metadata == 'with_meta':
         feature_list.extend(feature_list_metadata)
-    if option_cut_prior = 'with_cut_prior':
+    if option_cut_prior == 'with_cut_prior':
         feature_list.append(feature_list_cut_prior[0])
 
     # Prepare feature table for the model prediction

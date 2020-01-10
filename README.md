@@ -28,7 +28,7 @@ Accounts:
 Software requirements:
 - PostgreSQL
 - Flask
-- Java 64-bit JDK, any version from 8 to 13 (required by Python h2o package)
+- Java 64-bit JDK, version 11 (required by Python h2o package)
 - Plotly/Dash
 - Python 3.4 or later; with the following packages:
   - pandas

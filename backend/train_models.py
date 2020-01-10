@@ -44,7 +44,7 @@ def prep_train_test_data(feature_table, feature_list, categorical_features,
     # First, select the first cutoff (chronologically) from
     # each occupant; this will have the max segment value for that occupant
     # due to our clipping the windows in reverse chronological order.
-    df_tmp = df_cut.groupby('occupant_id').agg({'segment':'max'})
+    df_tmp = df_cut.groupby('occupant_id').agg({'segment':'max'}) \
         .reset_index().rename(columns={'segment':'segmax'})
     df_cut = df_cut.merge(df_tmp, on='occupant_id')
     df['cut0'] = df_cut.loc[df_cut['segment'] == df_cut['segmax']].copy()
@@ -384,9 +384,9 @@ def train_and_compare_models(config):
         feature_list.append(feature_list_anom[0])
     elif option_anom == 'manom':
         feature_list.append(feature_list_anom[1])
-    if option_metadata = 'with_meta':
+    if option_metadata == 'with_meta':
         feature_list.extend(feature_list_metadata)
-    if option_cut_prior = 'with_cut_prior':
+    if option_cut_prior == 'with_cut_prior':
         feature_list.append(feature_list_cut_prior[0])
     feature_and_label_list = feature_list.copy()
     feature_and_label_list.append(label)
