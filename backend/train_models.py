@@ -35,6 +35,8 @@ def prep_train_test_data(feature_table, feature_list, categorical_features,
     df['nocut'] = feature_table.loc[feature_table[label] == label_val_nocut] \
         .copy()
     df['cut'] = feature_table.loc[feature_table[label] == label_val_cut].copy()
+    df_cut = df['cut'].copy()
+    df.pop('cut', None)
 
     # We additionally want to ensure that both the first cutoffs of all
     # occupants and subsequent cutoffs (for those who have multiple cutoffs)
@@ -50,7 +52,11 @@ def prep_train_test_data(feature_table, feature_list, categorical_features,
     df['cut0'] = df_cut.loc[df_cut['segment'] == df_cut['segmax']].copy()
     # All other cutoffs are subsequent to the first ones
     df['cut1'] = df_cut.loc[df_cut['segment'] != df_cut['segmax']].copy()
-    
+
+    # Free up memory
+    df_tmp = []
+    df_cut = []
+ 
     features_dict = {}
     labels_dict = {}
     features_train = {}
@@ -88,6 +94,10 @@ def prep_train_test_data(feature_table, feature_list, categorical_features,
             features_test[subset] = pd.DataFrame(columns=feature_list)
             labels_test[subset] = pd.DataFrame(columns=[label])
 
+    # Free up memory
+    features_dict = {}
+    labels_dict = {}
+
     # Recombine the training and testing portions of the cut and nocut subsets
     if len(features_train['cut0'].index) > 0:
         features_train_tot = features_train['cut0'].copy()
@@ -120,6 +130,12 @@ def prep_train_test_data(feature_table, feature_list, categorical_features,
                                                  ignore_index=True)
     labels_test_tot = labels_test_tot.append(labels_test['nocut'],
                                              ignore_index=True)
+
+    # Free up memory
+    features_train = {}
+    labels_train = {}
+    features_test = {}
+    labels_test = {}
 
     # Rebalance the labels in the training subset
     if rebalance == 'oversample':
@@ -185,28 +201,15 @@ def apply_model(model, feature_table, feature_list, label, label_val_cut,
     # Get model performance metrics
     if score and label != None:
         perf = model.model_performance(df)
-        auc_roc = perf.auc()
-        # To Do: figure out how to get h2o to return the FPR, TPR,
-        # and threshold values for all possible threshold values
-        # so that we can easily plot the ROC curve and label the
-        # thresholds of each point. For now, just set thresholds list
-        # to None and use h2o's default thresholds for FPR and TPR
-        thresholds = None
-        FPR = perf.fpr()
-        TPR = perf.tpr()
-        F1 = perf.F1()
-        conf_mat = perf.confusion_matrix(metrics=['f1'])
+        auc = perf.auc()
+        logloss = perf.logloss()
         R2 = perf.r2()
     else:
-        auc_roc = None
-        thresholds = None
-        FPR = None
-        TPR = None
-        F1 = None
-        conf_mat = None
+        auc = None
+        logloss = None
         R2 = None
 
-    return [probabilities, auc_roc, thresholds, FPR, TPR, F1, conf_mat, R2]
+    return [probabilities, auc, logloss, R2]
 
  
 def train_and_test_model(model_type, feature_table_train, feature_table_test,
@@ -261,7 +264,7 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
 
     # Train and cross-validate model
     # Here's where we do the grid search over max_depth for random forest
-    if model_type == 'random_forest' and grid_search == True:
+    if model_type == 'random_forest' and max_depth_list != None:
 #        model_grid.train(x=feature_list, y=label, training_frame=df_train,
 #                         weights_column=wtcol, ntrees=ntrees,
 #                         validation_frame=df_test, nfolds=nfolds,
@@ -274,7 +277,7 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
         aucs = np.zeros([nMaxDepth])
         for i in range(nMaxDepth):
             model = H2ORandomForestEstimator(ntrees=ntrees,
-                                             max_depth=max_depth_list[i],
+                                             max_depth=int(max_depth_list[i]),
                                              training_frame=df_train,
                                              validation_frame=df_test,
                                              nfolds=nfolds,
@@ -300,11 +303,8 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
     # Get model reults and performance metrics for the training
     # and test subsets, and also for cross-validation
     probabilities = {}
-    auc_roc = {}
-    FPR = {}
-    TPR = {}
-    F1 = {}
-    conf_mat = {}
+    auc = {}
+    logloss = {}
     R2 = {}
     for dataset in ['train', 'xval', 'test']:
         if dataset in ['train', 'test']:
@@ -315,21 +315,16 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
 
             [
                 probabilities[dataset],
-                auc_roc[dataset],
-                thresholds,
-                FPR[dataset],
-                TPR[dataset],
-                F1[dataset],
-                conf_mat[dataset],
+                auc[dataset],
+                logloss[dataset],
                 R2[dataset]
             ] = apply_model(model, feature_table, feature_list,
                             label, label_val_cut, categoricals,
                             score=True)
         else:
-            auc_roc[dataset] = model.auc(xval=True)
+            auc[dataset] = model.auc(xval=True)
 
-    return [model, coefs, probabilities, auc_roc, thresholds, FPR, TPR, F1,
-            conf_mat, R2]
+    return [model, coefs, probabilities, auc, logloss, R2]
 
 
 # Find best-performing model, based on the cross-validation AUC score
@@ -377,6 +372,14 @@ def train_and_compare_models(config):
     metadata_options = ['with_meta', 'no_meta']
     cut_prior_options = ['with_cut_prior', 'no_cut_prior']
 
+    # Label
+    label = 'cutoff_strict'
+    label_val_nocut = 0
+    label_val_cut = 1
+
+    # Weights column
+    wtcol = 'weights'
+
     # To Do: put this logic and data into a separate function and/or file
     # Build feature list
     feature_list = feature_list_basic.copy()
@@ -393,22 +396,14 @@ def train_and_compare_models(config):
     feature_label_wt_list = feature_and_label_list.copy()
     feature_label_wt_list.append(wtcol)
 
-    # Label
-    label = 'cutoff_strict'
-    label_val_nocut = 0
-    label_val_cut = 1
-
     # Rebalancing info
     rebalance = 'weights'
-
-    # Weights column
-    wtcol = 'weights'
 
     # Regularization
     regularization = True
 
     # Arrays of performance metrics
-    auroc_array = np.zeros([nNSamples,nMTypes])
+    auc_array = np.zeros([nNSamples,nMTypes])
 
     # Loop over nSamples and model type to find best combination
     n = 0
@@ -445,10 +440,7 @@ def train_and_compare_models(config):
             # Train and test model
             [model, coefs,
              probabilities,
-             auc_roc,
-             thresholds,
-             FPR, TPR, F1, 
-             conf_mat, R2] = \
+             auc, logloss, R2] = \
                  train_and_test_model(model_type,
                                       feature_table_train[feature_label_wt_list],
                                       feature_table_test[feature_and_label_list],
@@ -459,7 +451,7 @@ def train_and_compare_models(config):
                                       max_depth_list=max_depth_list)
 
             print('....nSamples', nSamples, model_type, 'AUC_ROC[xval]',
-                  auc_roc['xval'])
+                  auc['xval'])
 
             # Save model
             model_path = h2o.save_model(model=model, path=model_save_dir,
@@ -477,21 +469,19 @@ def train_and_compare_models(config):
             # Write performance metrics to a file
             perf_file = model_perf_dir + '/stats.' + instance_str + '.csv'
             f = open(perf_file, 'w')
-            tmpstr = 'AUROC_train,FPR_train,TPR_train,F1_train,R2_train,' + \
-                     'AUROC_xval,' + \
-                     'AUROC_test,FPR_test,TPR_test,F1_test,R2_test\n'
+            tmpstr = 'AUC_train,LogLoss_train,R2_train,AUROC_xval,' + \
+                     'AUROC_test,LogLoss_test,R2_test\n'
             f.write(tmpstr)
-            tmpstr1 = '{:.6f},{:.6f},{:.6f},{:.6f},{:.6f},' \
-                .format(auc_roc['train'], FPR['train'], TPR['train'],
-                        F1['train'], R2['train'])
-            tmpstr2 = '{:.6f},{:.6f},{:.6f},{:.6f},{:.6f},{:.6f}\n' \
-                .format(auc_roc['xval'], auc_roc['test'], FPR['test'],
-                        TPR['test'], F1['test'], R2['test'])
+            print(auc['train'], logloss['train'], R2['train'])
+            tmpstr1 = '{:.6f},{:.6f},{:.6f},' \
+                .format(auc['train'], logloss['train'], R2['train'])
+            tmpstr2 = '{:.6f},{:.6f},{:.6f},{:.6f}\n' \
+                .format(auc['xval'], auc['test'], logloss['test'], R2['test'])
             f.write(tmpstr1 + tmpstr2)
             f.close()
 
-            # Store auroc in memory for finding optimum model
-            auroc_array[n, m] = auc_roc['xval']
+            # Store auc in memory for finding optimum model
+            auc_array[n, m] = auc['xval']
 
             # Write feature importances or coefficients to a file
             imp_file = model_perf_dir + '/coefs.' + instance_str + '.csv'
@@ -500,13 +490,13 @@ def train_and_compare_models(config):
             m += 1
         n += 1
 
-    # Find indices of maximum auc_roc
-    imax_flat = np.argmax(auroc_array)
+    # Find indices of maximum auc
+    imax_flat = np.argmax(auc_array)
     mmax = imax_flat % 2
     nmax = int(imax_flat / 2)
 
     print('best model:', model_types[mmax], 'nSamples:', nSamples_list[nmax],
-              'ROC AUC cross validation over train:', auroc_array[n, m])
+              'ROC AUC cross validation over train:', auc_array[nmax, mmax])
 
     # Save the relevant details of the best model
     best_model_info = {}
