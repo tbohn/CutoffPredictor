@@ -324,26 +324,42 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                 t0c_list_tmp = []
                 t0v_list_tmp = []
                 label_list_tmp = []
-                nWindows = 0
-                label_tri = 0
+                nWindows = 1
                 t0c = dfc_lens[g] - nSamples
                 t0v = dfv_lens[g] - nSamples
-                while t0c >= 0 and t0v >= 0 and nWindows < 1:
-                    t0c_list_tmp.append(t0c)
-                    t0v_list_tmp.append(t0v)
-                    label_list_tmp.append(label_tri)
-                    t0c -= nSamples
-                    t0v -= nSamples
-                    nWindows += 1
+                nCutPost = len(df_cutoffs \
+                    .loc[((df_cutoffs['occupant_id'] == occ) &
+                          (df_cutoffs['cutoff_at'] > today)), 'cutoff_at'] \
+                    .index)
+                if nCutPost == 0:
+                    label_tri = 0
+                else:
+                    date_first_cut = df_cutoffs \
+                        .loc[((df_cutoffs['occupant_id'] == occ) &
+                              (df_cutoffs['cutoff_at'] > today)), 'cutoff_at'] \
+                        .values()[0]
+                    date_diff = ((date_first_cut - today) / \
+                                 np.timdelta64(1, 'M')).astype(int)
+                    if date_diff <= nSamples:
+                        label_tri = 2
+                    else:
+                        label_tri = 1
+                t0c_list_tmp.append(t0c)
+                t0v_list_tmp.append(t0v)
+                label_list_tmp.append(label_tri)
                 nWindows_list.append(nWindows)
                 t0c_list.append(t0c_list_tmp)
                 t0v_list.append(t0v_list_tmp)
                 label_list.append(label_list_tmp)
 
             if cutoff:
-                nCP_array = np.arange(nCut).astype(int)
+                nCutPrior = len(df_cutoffs \
+                    .loc[((df_cutoffs['occupant_id'] == occ) &
+                          (df_cutoffs['cutoff_at'] <= today)), 'cutoff_at'] \
+                    .index)
+                nCP_array = [nCutPrior]
             else:
-                nCP_array = np.arange(0, 1)
+                nCP_array = [1]
             CP_array = np.where(nCP_array > 0, 1, 0).astype(int)
 
         # Compute statistics over all windows in all segments
@@ -391,7 +407,7 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
 
                 # Compute statistics of sample window
                 # Stats of charge
-                if t1c > t0c:
+                if t0c >= 0 and t1c > t0c:
                     df_tmp = dfc_seg.iloc[t0c:t1c].copy()
                     f_late = df_tmp['late'].mean(skipna=True)
                     mean_charge_tot = df_tmp['total_charge'].mean(skipna=True)
@@ -400,7 +416,7 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                     print('WARNING: i', i, 'g', g, 'w', w, 'nCharge', nCharge,
                           't0c', t0c, 't1c', t1c)
                 # Stats of volume
-                if t1v > t0v:
+                if t0v >= 0 and t1v > t0v:
                     df_tmp = dfv_seg.iloc[t0v:t1v].copy()
                     mean_vol = df_tmp['volume_kgals'].mean(skipna=True)
                     f_zero_vol = \
