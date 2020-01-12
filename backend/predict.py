@@ -9,6 +9,8 @@ from . import train_models as trmo
 def make_prediction(config, df_meter, df_location, df_occupant, df_volume,
                     df_charge, df_cutoffs):
 
+    h2o.init()
+
     mode = 'predict'
     ref_date_train = config['TRAINING']['REF_DATE']
     today_str = config['PREDICTION']['REF_DATE']
@@ -34,6 +36,11 @@ def make_prediction(config, df_meter, df_location, df_occupant, df_volume,
     model_type = df_best_model_info['model_type'].values[0]
     instance_str = '{:s}.N{:02d}.{:s}'.format(opt_str_pred, nSamples,
                                               model_type)
+
+    # Label
+    label = 'cutoff_strict'
+    label_val_nocut = 0
+    label_val_cut = 1
 
     # To Do: put this logic and data into a separate function and/or file
     # Build feature list
@@ -69,7 +76,7 @@ def make_prediction(config, df_meter, df_location, df_occupant, df_volume,
     model = h2o.load_model(model_file)
 
     # Make prediction
-    [probabilities, tmp, tmp, tmp, tmp, tmp, tmp, tmp] = \
+    [probabilities, tmp, tmp, tmp] = \
         trmo.apply_model(model, feature_table, feature_list,
                          label, label_val_cut, categoricals,
                          score=False)

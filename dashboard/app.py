@@ -43,7 +43,8 @@ def read_df(config):
     df['p_cutoff'] = probabilities['p_cutoff']
 
     # Convert fractions to percentages
-    for col in ['p_cutoff', 'f_late', 'f_zero', 'f_anom3_vol', 'f_manom3_vol']:
+    for col in ['p_cutoff', 'f_late', 'f_zero_vol', 'f_anom3_vol', 
+                'f_manom3_vol']:
         df[col] *= 100
 
     # Drop duplicates
