@@ -339,7 +339,7 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                               (df_cutoffs['cutoff_at'] > today)), 'cutoff_at'] \
                         .values()[0]
                     date_diff = ((date_first_cut - today) / \
-                                 np.timdelta64(1, 'M')).round().astype(int)
+                                 np.timedelta64(1, 'M')).round().astype(int)
                     if date_diff <= nSamples:
                         label_tri = 2
                     else:
