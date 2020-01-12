@@ -216,7 +216,7 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
                          feature_list, label, label_val_cut, categoricals=None,
                          wtcol=None, nfolds=5, fold_asgmnt='Stratified',
                          regularization=False, ntrees=100,
-                         max_depth=20, max_depth_list=None):
+                         max_depth=20, max_depth_list=None, seed=1):
 
     # Set up inputs for model
     df_train = set_up_H2OFrame(feature_table_train, feature_list,
@@ -232,7 +232,7 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
                                              validation_frame=df_test,
                                              nfolds=nfolds,
                                              fold_assignment=fold_asgmnt,
-                                             seed=1)
+                                             seed=seed)
         # To Do: figure out why h2o's grid_search didn't work
 #        else:
 #            model_grid = H2OGridSearch(model=H2ORandomForestEstimator,
@@ -249,7 +249,7 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
                                                   validation_frame=df_test,
                                                   nfolds=nfolds,
                                                   fold_assignment=fold_asgmnt,
-                                                  seed=1)
+                                                  seed=seed)
         else:
             model = H2OGeneralizedLinearEstimator(family='Binomial',
                                                   link='Logit',
@@ -260,7 +260,7 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
                                                   validation_frame=df_test,
                                                   nfolds=nfolds,
                                                   fold_assignment=fold_asgmnt,
-                                                  seed=1)
+                                                  seed=seed)
 
     # Train and cross-validate model
     # Here's where we do the grid search over max_depth for random forest
@@ -268,7 +268,7 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
 #        model_grid.train(x=feature_list, y=label, training_frame=df_train,
 #                         weights_column=wtcol, ntrees=ntrees,
 #                         validation_frame=df_test, nfolds=nfolds,
-#                         fold_assignment=fold_asgmnt, seed=1)
+#                         fold_assignment=fold_asgmnt, seed=seed)
 #        # Get the best-performing model
 #        model_gridperf = model_grid.get_grid(sort_by='auc', decreasing=True)
 #        model = model_gridperf.models[0]
@@ -282,7 +282,7 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
                                              validation_frame=df_test,
                                              nfolds=nfolds,
                                              fold_assignment=fold_asgmnt,
-                                             seed=1)
+                                             seed=seed)
             model.train(x=feature_list, y=label, training_frame=df_train,
                         weights_column=wtcol)
             models.append(model)
@@ -406,6 +406,7 @@ def train_and_compare_models(config):
     auc_array = np.zeros([nNSamples,nMTypes])
 
     # Loop over nSamples and model type to find best combination
+    seed = 1
     n = 0
     for nSamples in nSamples_list:
 
@@ -448,7 +449,8 @@ def train_and_compare_models(config):
                                       categoricals=categoricals,
                                       wtcol=wtcol,
                                       regularization=regularization,
-                                      max_depth_list=max_depth_list)
+                                      max_depth_list=max_depth_list,
+                                      seed=seed)
 
             print('....nSamples', nSamples, model_type, 'AUC_ROC[xval]',
                   auc['xval'])
@@ -462,9 +464,11 @@ def train_and_compare_models(config):
                 f.write(model_path)
 
             # Save model predictions
-            df_prob = pd.DataFrame(data={'p_cutoff':probabilities})
-            prob_file = prediction_dir + '/probabilities.' + instance_str + '.csv'
-            df_prob.to_csv(prob_file)
+            for subset in ['train', 'test']:
+                df_prob = pd.DataFrame(data={'p_cutoff':probabilities[subset]})
+                prob_file = prediction_dir + '/probabilities.' + \
+                            instance_str + '.' + subset + '.csv'
+                df_prob.to_csv(prob_file, index=False)
 
             # Write performance metrics to a file
             perf_file = model_perf_dir + '/stats.' + instance_str + '.csv'
@@ -484,11 +488,12 @@ def train_and_compare_models(config):
             auc_array[n, m] = auc['xval']
 
             # Write feature importances or coefficients to a file
-            imp_file = model_perf_dir + '/coefs.' + instance_str + '.csv'
-            coefs.to_csv(imp_file)
+            coef_file = model_perf_dir + '/coefs.' + instance_str + '.csv'
+            coefs.to_csv(coef_file, index=False)
 
             m += 1
         n += 1
+        seed += 1
 
     # Find indices of maximum auc
     imax_flat = np.argmax(auc_array)
@@ -515,7 +520,7 @@ def train_and_compare_models(config):
     best_model_info_file = model_save_dir + '/best_model_info.' + opt_str + \
         '.csv'
     df_best_model_info = pd.DataFrame(data=best_model_info)
-    df_best_model_info.to_csv(best_model_info_file)
+    df_best_model_info.to_csv(best_model_info_file, index=False)
 
     # Copy best saved model to file named 'best'
     model_path_file = model_save_dir + '/model.' + instance_str + '.path.txt'
@@ -524,14 +529,20 @@ def train_and_compare_models(config):
     copyfile(model_path_file, model_path_file_best)
  
     # Copy predictions of best model to file named 'best'
-    prob_file = prediction_dir + '/probabilities.' + instance_str + '.csv'
-    prob_file_best = prediction_dir + '/probabilities.' + opt_str + '.best.csv'
-    copyfile(prob_file, prob_file_best)
+    for subset in ['train', 'test']:
+        prob_file = prediction_dir + '/probabilities.' + instance_str + \
+                    '.' + subset + '.csv'
+        prob_file_best = prediction_dir + '/probabilities.' + opt_str + \
+                    '.' + subset + '.best.csv'
+        copyfile(prob_file, prob_file_best)
 
     # Copy perf stats of best model to file named 'best'
     perf_file = model_perf_dir + '/stats.' + instance_str + '.csv'
     perf_file_best = model_perf_dir + '/stats.' + opt_str + '.best.csv'
     copyfile(perf_file, perf_file_best)
+    coef_file = model_perf_dir + '/coefs.' + instance_str + '.csv'
+    coef_file_best = model_perf_dir + '/coefs.' + opt_str + '.best.csv'
+    copyfile(coef_file, coef_file_best)
 
     # Copy feature tables with best nSamples to 'best'
     feature_dir = config['PATHS']['FEATURE_TABLE_DIR_TRAIN']
