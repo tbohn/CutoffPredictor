@@ -77,7 +77,7 @@ def clip_time_series_by_cutoffs(df, date_colname, date_first, date_last,
             n_cut_prior.append(c)
         c += 1
     # Get any final segment that doesn't end in a cutoff
-    if date0 < date_last:
+    if c < nDates and date0 < date_last:
         date1 = date_last
         df_tmp = df.loc[df[date_colname].between(date0, date1)]
         df_list.append(df_tmp)
@@ -262,7 +262,8 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                 nSegc = len(dfc_lens)
                 nSegv = len(dfv_lens)
                 nSegments = min(nSegc, nSegv)
-                nCP_array = dfc_nprior[:nSegments]
+                nCP_array = np.empty([nSegments])
+                nCP_array[:] = dfc_nprior[:nSegments]
             # For training period nocut time series, there is just 1 segment
             else:
                 dfc_list.append(dfc.copy())
