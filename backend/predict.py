@@ -66,7 +66,7 @@ def make_prediction(config, df_meter, df_location, df_occupant, df_volume,
     with open(model_path_file_best, 'r') as f:
         model_file = f.read()
     print('loading', model_file)
-    model = h2o.loadModel(model_file)
+    model = h2o.load_model(model_file)
 
     # Make prediction
     [probabilities, tmp, tmp, tmp, tmp, tmp, tmp, tmp] = \
