@@ -352,14 +352,15 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                 t0v_list.append(t0v_list_tmp)
                 label_list.append(label_list_tmp)
 
+            nCP_array = np.empty([1])
             if cutoff:
                 nCutPrior = len(df_cutoffs \
                     .loc[((df_cutoffs['occupant_id'] == occ) &
                           (df_cutoffs['cutoff_at'] <= today)), 'cutoff_at'] \
                     .index)
-                nCP_array = [nCutPrior]
+                nCP_array[0] = nCutPrior
             else:
-                nCP_array = [1]
+                nCP_array[0] = 0
             CP_array = np.where(nCP_array > 0, 1, 0).astype(int)
 
         # Compute statistics over all windows in all segments
