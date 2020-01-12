@@ -46,23 +46,49 @@ def ztrans_bymon(x, default=0.0):
 def clip_time_series_by_cutoffs(df, date_colname, date_first, date_last,
                                 cutoff_dates):
 
-    nCut = len(cutoff_dates)
+    nDates = len(cutoff_dates)
     df_list = []
     lengths = []
+
+    # cutoff_trinary = 0 if no cutoffs occur after or within this segment
+    #                  1 if a cutoff occurs after this segment but not within
+    #                  2 if a cutoff occurs on the final time step of the
+    #                      segment
+    cutoff_trinary = []
+
+    # Number of prior cutoffs for each segment
+    n_cut_prior = []
+
     date0 = date_first
     # allow for cutoff to occur 1 month after final billing date
     date_last = date_last + pd.DateOffset(months=1)
-    for c in range(nCut):
+
+    # Get all the segments within the time series that are followed by a cutoff
+    c = 0
+    while c < nDates and cutoff_dates[c] <= date_last:
         if cutoff_dates[c] > date_first and cutoff_dates[c] <= date_last:
+            # The cutoff occurred within the given time series
             date1 = cutoff_dates[c]
             df_tmp = df.loc[df[date_colname].between(date0, date1)]
             date0 = date1 + pd.DateOffset(months=1)
-        else:
-            df_tmp = df.loc[df[date_colname].isna()]
+            df_list.append(df_tmp)
+            lengths.append(len(df_tmp))
+            cutoff_trinary.append(2)
+            n_cut_prior.append(c)
+        c += 1
+    # Get any final segment that doesn't end in a cutoff
+    if date0 < date_last:
+        date1 = date_last
+        df_tmp = df.loc[df[date_colname].between(date0, date1)]
         df_list.append(df_tmp)
         lengths.append(len(df_tmp))
+        if cutoff_dates[c] > date_last:
+            cutoff_trinary.append(1)
+        else:
+            cutoff_trinary.append(0)
+        n_cut_prior.append(c)
 
-    return df_list, lengths
+    return df_list, lengths, cutoff_trinary, n_cut_prior
 
 
 # Create table of predictors and predictands
@@ -196,10 +222,19 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
         # dfc_list and dfv_list are the charge and volume timeseries for each
         # segment
         # dfc_lens and dfv_lens are the lengths of those segments
+        # dfc_ and dfv_cut_tri are trinary cutoff labels of those segments
+        #     where 0 = no subsequent cutoff
+        #           1 = cutoff subsequent but not immediate
+        #           2 = cutoff immediately subsequent
+        # dfc_ and dfv_nprior are numbers of prior cutoffs for each segment
         dfc_list = []
         dfv_list = []
         dfc_lens = []
         dfv_lens = []
+        dfc_cut_tri = []
+        dfv_cut_tri = []
+        dfc_nprior = []
+        dfv_nprior = []
         # nWindows_list = number of windows in each segment
         nWindows_list = []
 
@@ -216,16 +251,18 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
             # For training period cutoff time series, clip time series into
             # segments between cutoffs (if any)
             if cutoff:
-                dfc_list, dfc_lens = \
+                dfc_list, dfc_lens, dfc_cut_tri, dfc_nprior = \
                     clip_time_series_by_cutoffs(dfc, 'billing_period_end',
                                                 bill_first, bill_last,
                                                 cutoff_dates)
-                dfv_list, dfv_lens = \
+                dfv_list, dfv_lens, dfv_cut_tri, dfv_nprior = \
                     clip_time_series_by_cutoffs(dfv, 'meter_read_at',
                                                 read_first, read_last,
                                                 cutoff_dates)
-                nSegments = nCut
-                nCP_array = np.arange(nSegments).astype(int)
+                nSegc = len(dfc_lens)
+                nSegv = len(dfv_lens)
+                nSegments = min(nSegc, nSegv)
+                nCP_array = dfc_nprior[:nSegments]
             # For training period nocut time series, there is just 1 segment
             else:
                 dfc_list.append(dfc.copy())
@@ -246,8 +283,9 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                 # Assign value of the trinary label for final window
                 # (which we start with)
                 if cutoff:
-                    # Final window before cutoff in a cutoff segment
-                    label_tri = 2
+                    # Final window of segment, whose value will be the
+                    # trinary label computed in clip_time_series...()
+                    label_tri = dfc_cut_tri[g]
                 else:
                     # Final window in a non-cutoff segment
                     # (all windows get same label)
@@ -262,7 +300,10 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                     t0v -= nSamples
                     if cutoff == 1:
                         # Prior windows in a cutoff segment
-                        label_tri = 1
+                        if dfc_cut_tri[g] >= 1:
+                            label_tri = 1
+                        else:
+                            label_tri = 0
                     nWindows += 1
                 nWindows_list.append(nWindows)
                 t0c_list.append(t0c_list_tmp)
