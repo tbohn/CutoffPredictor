@@ -78,9 +78,6 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
 
     for occ in occlist:
 
-        # DEBUG
-        print('occ',occ,'i',i,'k',k,'kcut',kcut,'knocut',knocut)
-
         # Determine whether this customer is within our timeframe
         dfo = df_occupant.loc[df_occupant['occupant_id'] == occ].copy()
         if len(dfo) > 0:
