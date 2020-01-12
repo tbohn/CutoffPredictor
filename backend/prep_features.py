@@ -465,10 +465,8 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                           't0v', t0v, 't1v', t1v)
 
                 # Define binary cutoff label
-                if label_tri == 0: 
+                if label_tri < 2: 
                     cutoff_strict = 0
-                elif label_tri == 1:
-                    cutoff_strict = -1
                 else:
                     cutoff_strict = 1
 
