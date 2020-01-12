@@ -581,7 +581,19 @@ def prep_features(config, df_meter, df_location, df_occupant,
         ref_date = config['TRAINING']['REF_DATE']
         outdir = config['PATHS']['FEATURE_TABLE_DIR_TRAIN']
     else:
-        best_model_info_file = config['PATHS']['BEST_MODEL_INFO_FILE']
+        model_save_dir = config['PATHS']['MODEL_SAVE_DIR']
+        ref_date_train = config['TRAINING']['REF_DATE']
+        option_cut_prior = config['PREDICTION']['FEATURES_CUT_PRIOR']
+        option_metadata = config['PREDICTION']['FEATURES_METADATA']
+        option_anom = config['PREDICTION']['FEATURES_ANOM']
+        opt_str_train = '{:s}.{:s}.{:s}.{:s}.{:s}'.format('train',
+                                                          ref_date_train,
+                                                          option_cut_prior,
+                                                          option_metadata,
+                                                          option_anom)
+#        best_model_info_file = config['PATHS']['BEST_MODEL_INFO_FILE']
+        best_model_info_file = model_save_dir + '/best_model_info.' + \
+            opt_str_train + '.csv'
         df_best_model_info = pd.read_csv(best_model_info_file)
         nSamples_list = [int(df_best_model_info['nSamples'].values[0])]
         ref_date = config['PREDICTION']['REF_DATE']

@@ -25,7 +25,10 @@ def make_prediction(config, df_meter, df_location, df_occupant, df_volume,
                                                      option_anom)
 
     # Read the relevant details of the best model from the best_model_info_file
-    best_model_info_file = config['PATHS']['BEST_MODEL_INFO_FILE']
+    model_save_dir = config['PATHS']['MODEL_SAVE_DIR']
+#    best_model_info_file = config['PATHS']['BEST_MODEL_INFO_FILE']
+    best_model_info_file = model_save_dir + '/best_model_info.' + \
+        opt_str_train + '.csv'
     df_best_model_info = pd.read_csv(best_model_info_file)
     nSamples = df_best_model_info['nSamples'].values[0]
     model_type = df_best_model_info['model_type'].values[0]
