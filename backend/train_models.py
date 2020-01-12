@@ -306,23 +306,19 @@ def train_and_test_model(model_type, feature_table_train, feature_table_test,
     auc = {}
     logloss = {}
     R2 = {}
-    for dataset in ['train', 'xval', 'test']:
-        if dataset in ['train', 'test']:
-            if dataset == 'train':
-                feature_table = feature_table_train
-            elif dataset == 'test':
-                feature_table = feature_table_test
-
-            [
-                probabilities[dataset],
-                auc[dataset],
-                logloss[dataset],
-                R2[dataset]
-            ] = apply_model(model, feature_table, feature_list,
-                            label, label_val_cut, categoricals,
-                            score=True)
-        else:
-            auc[dataset] = model.auc(xval=True)
+    for dataset in ['train', 'test']:
+        if dataset == 'train':
+            feature_table = feature_table_train
+        elif dataset == 'test':
+            feature_table = feature_table_test
+        [probabilities[dataset], tmp, tmp, R2[dataset]] = \
+            apply_model(model, feature_table, feature_list,
+                        label, label_val_cut, categoricals,
+                        score=True)
+    auc = model.auc(train=True, xval=True, valid=True)
+    auc['test'] = auc['valid']
+    logloss = model.logloss(train=True, xval=True, valid=True)
+    logloss['test'] = logloss['valid']
 
     return [model, coefs, probabilities, auc, logloss, R2]
 
@@ -403,7 +399,10 @@ def train_and_compare_models(config):
     regularization = True
 
     # Arrays of performance metrics
-    auc_array = np.zeros([nNSamples,nMTypes])
+    auc_array_xval = np.zeros([nNSamples,nMTypes])
+    logloss_array_xval = np.zeros([nNSamples,nMTypes])
+    auc_array_test = np.zeros([nNSamples,nMTypes])
+    logloss_array_test = np.zeros([nNSamples,nMTypes])
 
     # Loop over nSamples and model type to find best combination
     seed = 1
@@ -453,7 +452,7 @@ def train_and_compare_models(config):
                                       seed=seed)
 
             print('....nSamples', nSamples, model_type, 'AUC_ROC[xval]',
-                  auc['xval'])
+                  auc['xval'], 'LogLoss[xval]', logloss['xval'])
 
             # Save model
             model_path = h2o.save_model(model=model, path=model_save_dir,
@@ -473,19 +472,21 @@ def train_and_compare_models(config):
             # Write performance metrics to a file
             perf_file = model_perf_dir + '/stats.' + instance_str + '.csv'
             f = open(perf_file, 'w')
-            tmpstr = 'AUC_train,LogLoss_train,R2_train,AUROC_xval,' + \
-                     'AUROC_test,LogLoss_test,R2_test\n'
+            tmpstr = 'AUC_train,LogLoss_train,' + \
+                     'AUROC_xval,LogLoss_xval' + \
+                     'AUROC_test,LogLoss_test\n'
             f.write(tmpstr)
-            print(auc['train'], logloss['train'], R2['train'])
-            tmpstr1 = '{:.6f},{:.6f},{:.6f},' \
-                .format(auc['train'], logloss['train'], R2['train'])
-            tmpstr2 = '{:.6f},{:.6f},{:.6f},{:.6f}\n' \
-                .format(auc['xval'], auc['test'], logloss['test'], R2['test'])
-            f.write(tmpstr1 + tmpstr2)
+            tmpstr = '{:.6f},{:.6f},{:.6f},{:.6f},{:.6f},{:.6f}' \
+                .format(auc['train'], logloss['train'], auc['xval'])
+                        logloss['xval'], auc['test'], logloss['test'])
+            f.write(tmpstr)
             f.close()
 
             # Store auc in memory for finding optimum model
-            auc_array[n, m] = auc['xval']
+            auc_array_xval[n, m] = auc['xval']
+            logloss_array_xval[n, m] = logloss['xval']
+            auc_array_test[n, m] = auc['test']
+            logloss_array_test[n, m] = logloss['test']
 
             # Write feature importances or coefficients to a file
             coef_file = model_perf_dir + '/coefs.' + instance_str + '.csv'
@@ -496,26 +497,30 @@ def train_and_compare_models(config):
         seed += 1
 
     # Find indices of maximum auc
-    imax_flat = np.argmax(auc_array)
+    print('AUC xval')
+    print(auc_array_xval)
+    print('LogLoss xval')
+    print(logloss_array_xval)
+    imax_flat = np.argmax(auc_array_xval)
     mmax = imax_flat % 2
     nmax = int(imax_flat / 2)
 
     print('best model:', model_types[mmax], 'nSamples:', nSamples_list[nmax],
-              'ROC AUC cross validation over train:', auc_array[nmax, mmax])
+          'ROC AUC cross validation over train:', auc_array_xval[nmax, mmax])
 
     # Save the relevant details of the best model
     best_model_info = {}
     nSamples = nSamples_list[nmax]
     model_type = model_types[mmax]
     instance_str = '{:s}.N{:02d}.{:s}'.format(opt_str, nSamples, model_type)
-    best_model_info['ref_date'] = ref_date
-    best_model_info['option_cut_prior'] = option_cut_prior
-    best_model_info['option_metadata'] = option_metadata
-    best_model_info['option_anom'] = option_anom
-    best_model_info['feature_list'] = feature_list
-    best_model_info['nSamples'] = nSamples
-    best_model_info['model_type'] = model_type
-    best_model_info['rebalance'] = rebalance
+    best_model_info['ref_date'] = [ref_date]
+    best_model_info['option_cut_prior'] = [option_cut_prior]
+    best_model_info['option_metadata'] = [option_metadata]
+    best_model_info['option_anom'] = [option_anom]
+#    best_model_info['feature_list'] = feature_list
+    best_model_info['nSamples'] = [nSamples]
+    best_model_info['model_type'] = [model_type]
+    best_model_info['rebalance'] = [rebalance]
 #    best_model_info_file = config['PATHS']['BEST_MODEL_INFO_FILE']
     best_model_info_file = model_save_dir + '/best_model_info.' + opt_str + \
         '.csv'
