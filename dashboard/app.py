@@ -203,7 +203,7 @@ def dashboard(config):
     feature_total_str = {
         p_cut_col: 'Predicted Cutoffs',
         'mean_charge_tot': 'Total Revenue Loss ($K/mo)',
-        'mean_charge_late': 'Totale Late Charges ($K/mo)',
+        'mean_charge_late': 'Total Late Charges ($K/mo)',
         'mean_vol': 'Total Volume Loss (kGal/mo)',
         'f_late': 'Total Late Payment Pct (%)',
         'nCutPrior': 'Total No. Prior Cutoffs',
@@ -525,12 +525,17 @@ def dashboard(config):
         df = df.loc[df[p_cut_col] >= float(thresh)]
         column_list = ["meter_address", "p_cutoff",
                        "mean_charge_tot", "mean_charge_late",
-                       "mean_vol", "f_late", "nCutPrior"]
+                       "mean_vol", "f_late", "nCutPrior",
+                       "municipality", "cust_type", "meter_size",
+                      ]
         column_longnames = [feature_longname[col] for col in column_list]
         df = df.round({
+                       'p_cutoff': 2,
                        'mean_charge_tot': 2,
                        'mean_charge_late': 2,
-                       'mean_vol': 2})
+                       'mean_vol': 2,
+                       'f_late': 2,
+                       })
         df_new = pd.DataFrame(df[column_list].values, columns=column_longnames)
         return generate_table(df_new)
 
