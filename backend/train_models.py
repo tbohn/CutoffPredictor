@@ -477,7 +477,7 @@ def train_and_compare_models(config):
                      'AUROC_test,LogLoss_test\n'
             f.write(tmpstr)
             tmpstr = '{:.6f},{:.6f},{:.6f},{:.6f},{:.6f},{:.6f}' \
-                .format(auc['train'], logloss['train'], auc['xval'])
+                .format(auc['train'], logloss['train'], auc['xval'],
                         logloss['xval'], auc['test'], logloss['test'])
             f.write(tmpstr)
             f.close()

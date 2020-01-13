@@ -337,10 +337,10 @@ def create_feature_table(df_occupant, df_location, df_meter, df_cutoffs,
                     date_first_cut = df_cutoffs \
                         .loc[((df_cutoffs['occupant_id'] == occ) &
                               (df_cutoffs['cutoff_at'] > today)), 'cutoff_at'] \
-                        .values()[0]
+                        .to_numpy()[0]
                     date_first_cut = pd.to_datetime(date_first_cut)
-                    date_diff = int(np.round(((date_first_cut - today) / \
-                                              np.timedelta64(1, 'M')))
+                    date_diff = int(np.round((date_first_cut - today) / \
+                                             np.timedelta64(1, 'M')))
                     if date_diff <= nSamples:
                         label_tri = 2
                     else:
