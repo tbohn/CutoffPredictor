@@ -1,7 +1,7 @@
 # CutoffPredictor
 Tool for water utilities to monitor and predict customers' risk of service interruption
 
-For details, please read the [User Guide](Documentation/CutoffPredictor_v2.0_Description_and_User_Guide.pdf)
+For details, please read the [User Guide](Documentation/CutoffPredictor_v2.0_Description_and_User_Guide.pdf) [Utility database](Documentation/database_tables.md)
 
 ## Overview
 
